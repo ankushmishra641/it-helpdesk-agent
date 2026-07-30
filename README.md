@@ -65,7 +65,7 @@ User (Streamlit / API)
 | Agent | LangGraph + LangChain |
 | LLM | Groq (`llama-3.3-70b-versatile`) / OpenAI optional |
 | Embeddings | FastEmbed (`all-MiniLM-L6-v2`) |
-| Vector DB | ChromaDB |
+| Vector DB | ChromaDB (ephemeral on cloud) |
 | Validation | Pydantic |
 | Config | python-dotenv / Streamlit secrets |
 

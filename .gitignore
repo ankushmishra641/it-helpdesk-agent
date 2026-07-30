@@ -1,5 +1,6 @@
 .env
 .chroma/
+.faiss_index/
 __pycache__/
 *.pyc
 .venv/
