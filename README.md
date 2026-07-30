@@ -43,7 +43,7 @@ User (Streamlit / API)
         ▼
  LangGraph Agent
         │
-        ├── search_knowledge_base  → embeddings + vector search
+        ├── search_knowledge_base  → ChromaDB + embeddings
         ├── check_system_status
         ├── create_ticket
         ├── lookup_ticket
@@ -64,7 +64,8 @@ User (Streamlit / API)
 | API | FastAPI + Uvicorn |
 | Agent | LangGraph + LangChain |
 | LLM | Groq (`llama-3.3-70b-versatile`) / OpenAI optional |
-| Embeddings / retrieval | TF-IDF vector search over IT docs (NumPy) |
+| Embeddings | FastEmbed (`all-MiniLM-L6-v2`) |
+| Vector DB | ChromaDB |
 | Agent | LangGraph + LangChain + Groq |
 | Validation | Pydantic |
 | Config | python-dotenv / Streamlit secrets |

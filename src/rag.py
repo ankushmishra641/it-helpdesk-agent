@@ -1,30 +1,34 @@
-"""RAG retrieval with pure NumPy TF-IDF (Streamlit Cloud friendly).
-
-No Chroma, FAISS, fastembed, torch, or Pillow — avoids native build failures on Python 3.14.
-"""
+"""RAG ingestion + retrieval over the IT knowledge base (ChromaDB)."""
 from __future__ import annotations
 
-import math
-import re
-from collections import Counter
 from pathlib import Path
 from typing import Any
 
 from langchain_community.document_loaders import DirectoryLoader, TextLoader
+from langchain_community.vectorstores import Chroma
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from src.config import KB_DIR, TOP_K
+from src.config import CHROMA_DIR, EMBEDDING_MODEL, KB_DIR, TOP_K
 
-_chunks: list[Any] = []
-_tfidf: list[dict[str, float]] = []
-_idf: dict[str, float] = {}
-_ready = False
-
-_TOKEN = re.compile(r"[a-z0-9_]+")
+_embeddings = None
+_store: Chroma | None = None
 
 
-def _tokenize(text: str) -> list[str]:
-    return _TOKEN.findall(text.lower())
+def get_embeddings():
+    global _embeddings
+    if _embeddings is not None:
+        return _embeddings
+
+    try:
+        from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
+
+        _embeddings = FastEmbedEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        return _embeddings
+    except Exception:
+        from langchain_community.embeddings import HuggingFaceEmbeddings
+
+        _embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+        return _embeddings
 
 
 def _load_chunks():
@@ -46,61 +50,42 @@ def _load_chunks():
     return splitter.split_documents(docs)
 
 
-def build_or_load_store(force_rebuild: bool = False):
-    """Build an in-memory TF-IDF index over the knowledge base."""
-    global _chunks, _tfidf, _idf, _ready
+def build_or_load_store(force_rebuild: bool = False) -> Chroma:
+    """Build or load a local ChromaDB index (for localhost demos)."""
+    global _store
+    if _store is not None and not force_rebuild:
+        return _store
 
-    if _ready and not force_rebuild:
-        return True
+    CHROMA_DIR.mkdir(parents=True, exist_ok=True)
+    embeddings = get_embeddings()
+
+    if CHROMA_DIR.exists() and any(CHROMA_DIR.iterdir()) and not force_rebuild:
+        try:
+            _store = Chroma(
+                persist_directory=str(CHROMA_DIR),
+                embedding_function=embeddings,
+                collection_name="it_helpdesk",
+            )
+            if _store._collection.count() > 0:
+                return _store
+        except Exception:
+            pass
 
     chunks = _load_chunks()
-    docs_tokens = [_tokenize(c.page_content) for c in chunks]
-    df: Counter[str] = Counter()
-    for tokens in docs_tokens:
-        df.update(set(tokens))
-
-    n = max(len(docs_tokens), 1)
-    idf = {term: math.log((n + 1) / (freq + 1)) + 1.0 for term, freq in df.items()}
-
-    vectors: list[dict[str, float]] = []
-    for tokens in docs_tokens:
-        tf = Counter(tokens)
-        length = max(len(tokens), 1)
-        vec = {t: (cnt / length) * idf.get(t, 0.0) for t, cnt in tf.items()}
-        vectors.append(vec)
-
-    _chunks = chunks
-    _tfidf = vectors
-    _idf = idf
-    _ready = True
-    return True
-
-
-def _cosine(a: dict[str, float], b: dict[str, float]) -> float:
-    if not a or not b:
-        return 0.0
-    dot = 0.0
-    for k, v in a.items():
-        if k in b:
-            dot += v * b[k]
-    na = math.sqrt(sum(v * v for v in a.values())) or 1e-12
-    nb = math.sqrt(sum(v * v for v in b.values())) or 1e-12
-    return dot / (na * nb)
+    _store = Chroma.from_documents(
+        documents=chunks,
+        embedding=embeddings,
+        persist_directory=str(CHROMA_DIR),
+        collection_name="it_helpdesk",
+    )
+    return _store
 
 
 def search_knowledge_base(query: str, k: int = TOP_K) -> list[dict[str, Any]]:
-    build_or_load_store()
-    q_tokens = _tokenize(query)
-    tf = Counter(q_tokens)
-    length = max(len(q_tokens), 1)
-    q_vec = {t: (cnt / length) * _idf.get(t, 0.0) for t, cnt in tf.items()}
-
-    scored = [(_cosine(q_vec, doc_vec), idx) for idx, doc_vec in enumerate(_tfidf)]
-    scored.sort(reverse=True)
-
+    store = build_or_load_store()
+    results = store.similarity_search_with_score(query, k=k)
     out: list[dict[str, Any]] = []
-    for score, idx in scored[:k]:
-        doc = _chunks[idx]
+    for doc, score in results:
         out.append(
             {
                 "content": doc.page_content,
