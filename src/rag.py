@@ -1,39 +1,30 @@
-"""RAG ingestion + retrieval — FastEmbed + in-memory cosine search.
+"""RAG retrieval with pure NumPy TF-IDF (Streamlit Cloud friendly).
 
-Designed for reliable Streamlit Cloud deploys (no Chroma/FAISS native deps).
+No Chroma, FAISS, fastembed, torch, or Pillow — avoids native build failures on Python 3.14.
 """
 from __future__ import annotations
 
+import math
+import re
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 from langchain_community.document_loaders import DirectoryLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from src.config import EMBEDDING_MODEL, KB_DIR, TOP_K
+from src.config import KB_DIR, TOP_K
 
-_embeddings = None
 _chunks: list[Any] = []
-_matrix: np.ndarray | None = None
+_tfidf: list[dict[str, float]] = []
+_idf: dict[str, float] = {}
 _ready = False
 
+_TOKEN = re.compile(r"[a-z0-9_]+")
 
-def get_embeddings():
-    global _embeddings
-    if _embeddings is not None:
-        return _embeddings
 
-    try:
-        from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
-
-        _embeddings = FastEmbedEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-        return _embeddings
-    except Exception:
-        from langchain_community.embeddings import HuggingFaceEmbeddings
-
-        _embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
-        return _embeddings
+def _tokenize(text: str) -> list[str]:
+    return _TOKEN.findall(text.lower())
 
 
 def _load_chunks():
@@ -55,47 +46,66 @@ def _load_chunks():
     return splitter.split_documents(docs)
 
 
-def _normalize(vectors: np.ndarray) -> np.ndarray:
-    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
-    norms = np.clip(norms, 1e-12, None)
-    return vectors / norms
-
-
 def build_or_load_store(force_rebuild: bool = False):
-    """Build an in-memory embedding index from the knowledge base."""
-    global _chunks, _matrix, _ready
+    """Build an in-memory TF-IDF index over the knowledge base."""
+    global _chunks, _tfidf, _idf, _ready
 
     if _ready and not force_rebuild:
         return True
 
-    embeddings = get_embeddings()
     chunks = _load_chunks()
-    texts = [c.page_content for c in chunks]
-    vectors = np.array(embeddings.embed_documents(texts), dtype=np.float32)
-    _matrix = _normalize(vectors)
+    docs_tokens = [_tokenize(c.page_content) for c in chunks]
+    df: Counter[str] = Counter()
+    for tokens in docs_tokens:
+        df.update(set(tokens))
+
+    n = max(len(docs_tokens), 1)
+    idf = {term: math.log((n + 1) / (freq + 1)) + 1.0 for term, freq in df.items()}
+
+    vectors: list[dict[str, float]] = []
+    for tokens in docs_tokens:
+        tf = Counter(tokens)
+        length = max(len(tokens), 1)
+        vec = {t: (cnt / length) * idf.get(t, 0.0) for t, cnt in tf.items()}
+        vectors.append(vec)
+
     _chunks = chunks
+    _tfidf = vectors
+    _idf = idf
     _ready = True
     return True
 
 
+def _cosine(a: dict[str, float], b: dict[str, float]) -> float:
+    if not a or not b:
+        return 0.0
+    dot = 0.0
+    for k, v in a.items():
+        if k in b:
+            dot += v * b[k]
+    na = math.sqrt(sum(v * v for v in a.values())) or 1e-12
+    nb = math.sqrt(sum(v * v for v in b.values())) or 1e-12
+    return dot / (na * nb)
+
+
 def search_knowledge_base(query: str, k: int = TOP_K) -> list[dict[str, Any]]:
     build_or_load_store()
-    assert _matrix is not None
+    q_tokens = _tokenize(query)
+    tf = Counter(q_tokens)
+    length = max(len(q_tokens), 1)
+    q_vec = {t: (cnt / length) * _idf.get(t, 0.0) for t, cnt in tf.items()}
 
-    embeddings = get_embeddings()
-    q = np.array(embeddings.embed_query(query), dtype=np.float32)
-    q = q / max(float(np.linalg.norm(q)), 1e-12)
-    scores = _matrix @ q
-    top_idx = np.argsort(scores)[::-1][:k]
+    scored = [(_cosine(q_vec, doc_vec), idx) for idx, doc_vec in enumerate(_tfidf)]
+    scored.sort(reverse=True)
 
     out: list[dict[str, Any]] = []
-    for i in top_idx:
-        doc = _chunks[int(i)]
+    for score, idx in scored[:k]:
+        doc = _chunks[idx]
         out.append(
             {
                 "content": doc.page_content,
                 "source": doc.metadata.get("source", "unknown"),
-                "score": float(scores[int(i)]),
+                "score": float(score),
             }
         )
     return out

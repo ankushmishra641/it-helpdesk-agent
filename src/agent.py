@@ -1,15 +1,12 @@
-"""LangGraph IT Helpdesk agent — reason → tool → observe → answer."""
+"""LangGraph IT Helpdesk agent — compatible with LangGraph 0.3+ / 1.x."""
 from __future__ import annotations
 
 import json
 import re
-from typing import Annotated, Any, Literal, TypedDict
+from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import StructuredTool
-from langgraph.graph import END, StateGraph
-from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode
 from pydantic import BaseModel, Field
 
 from src.config import GROQ_API_KEY, GROQ_MODEL, OPENAI_API_KEY, OPENAI_MODEL, LLM_PROVIDER, has_llm
@@ -104,46 +101,24 @@ def get_llm():
     raise RuntimeError("No LLM configured. Set GROQ_API_KEY or OPENAI_API_KEY in .env")
 
 
-class AgentState(TypedDict):
-    messages: Annotated[list, add_messages]
-
-
-def build_agent():
-    tools = _build_tools()
-    llm = get_llm().bind_tools(tools)
-
-    def assistant(state: AgentState):
-        msgs = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
-        response = llm.invoke(msgs)
-        return {"messages": [response]}
-
-    def should_continue(state: AgentState) -> Literal["tools", "end"]:
-        last = state["messages"][-1]
-        if isinstance(last, AIMessage) and last.tool_calls:
-            return "tools"
-        return "end"
-
-    graph = StateGraph(AgentState)
-    graph.add_node("assistant", assistant)
-    graph.add_node("tools", ToolNode(tools))
-    graph.set_entry_point("assistant")
-    graph.add_conditional_edges("assistant", should_continue, {"tools": "tools", "end": END})
-    graph.add_edge("tools", "assistant")
-    return graph.compile()
-
-
 _agent = None
 
 
 def get_agent():
+    """Build a create_react_agent graph (LangGraph prebuilt)."""
     global _agent
-    if _agent is None:
-        _agent = build_agent()
+    if _agent is not None:
+        return _agent
+
+    from langgraph.prebuilt import create_react_agent
+
+    tools = _build_tools()
+    llm = get_llm()
+    _agent = create_react_agent(llm, tools, prompt=SYSTEM_PROMPT)
     return _agent
 
 
 def _offline_fallback(user_text: str) -> dict[str, Any]:
-    """Works without API keys so you can still demo RAG + tools locally."""
     steps: list[str] = []
     lower = user_text.lower()
 
@@ -183,7 +158,7 @@ def _offline_fallback(user_text: str) -> dict[str, Any]:
         "\n### Suggested next steps\n",
         "1. Follow the cited IT guide steps above.\n",
         "2. If still blocked, keep the ticket ID and share it with IT.\n",
-        "3. Add GROQ_API_KEY or OPENAI_API_KEY for full agent reasoning.",
+        "3. Add GROQ_API_KEY for full agent reasoning.",
     ]
     return {"answer": "\n".join(answer), "tool_trace": steps, "mode": "offline"}
 
@@ -207,15 +182,20 @@ def run_agent(user_text: str, history: list[dict[str, str]] | None = None) -> di
 
     tool_trace: list[str] = []
     for msg in final_messages:
-        if isinstance(msg, AIMessage) and msg.tool_calls:
+        if isinstance(msg, AIMessage) and getattr(msg, "tool_calls", None):
             for tc in msg.tool_calls:
-                tool_trace.append(f"{tc['name']}({json.dumps(tc.get('args', {}))})")
+                name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", "")
+                args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", {})
+                tool_trace.append(f"{name}({json.dumps(args)})")
         if isinstance(msg, ToolMessage):
             tool_trace.append(f"-> {msg.name}: {str(msg.content)[:180]}")
 
     answer = ""
     for msg in reversed(final_messages):
-        if isinstance(msg, AIMessage) and msg.content and not msg.tool_calls:
+        if isinstance(msg, AIMessage) and msg.content and not getattr(msg, "tool_calls", None):
+            answer = msg.content if isinstance(msg.content, str) else str(msg.content)
+            break
+        if isinstance(msg, AIMessage) and msg.content:
             answer = msg.content if isinstance(msg.content, str) else str(msg.content)
             break
 

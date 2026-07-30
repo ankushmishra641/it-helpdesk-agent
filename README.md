@@ -64,8 +64,8 @@ User (Streamlit / API)
 | API | FastAPI + Uvicorn |
 | Agent | LangGraph + LangChain |
 | LLM | Groq (`llama-3.3-70b-versatile`) / OpenAI optional |
-| Embeddings | FastEmbed (`all-MiniLM-L6-v2`) |
-| Vector retrieval | In-memory cosine similarity index |
+| Embeddings / retrieval | TF-IDF vector search over IT docs (NumPy) |
+| Agent | LangGraph + LangChain + Groq |
 | Validation | Pydantic |
 | Config | python-dotenv / Streamlit secrets |
 
