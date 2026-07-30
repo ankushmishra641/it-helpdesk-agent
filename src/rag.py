@@ -1,24 +1,22 @@
-"""RAG ingestion + retrieval over the IT knowledge base (ChromaDB)."""
+"""RAG ingestion + retrieval — FastEmbed + in-memory cosine search.
+
+Designed for reliable Streamlit Cloud deploys (no Chroma/FAISS native deps).
+"""
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
-import chromadb
-from chromadb.config import Settings
-from langchain_chroma import Chroma
+import numpy as np
 from langchain_community.document_loaders import DirectoryLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from src.config import EMBEDDING_MODEL, KB_DIR, TOP_K
 
-# Helps avoid some Chroma telemetry / client init issues on cloud hosts
-os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
-
 _embeddings = None
-_store: Chroma | None = None
-_client = None
+_chunks: list[Any] = []
+_matrix: np.ndarray | None = None
+_ready = False
 
 
 def get_embeddings():
@@ -36,16 +34,6 @@ def get_embeddings():
 
         _embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
         return _embeddings
-
-
-def _get_client():
-    """Ephemeral client is more reliable on Streamlit Cloud than PersistentClient."""
-    global _client
-    if _client is None:
-        _client = chromadb.EphemeralClient(
-            settings=Settings(anonymized_telemetry=False, allow_reset=True)
-        )
-    return _client
 
 
 def _load_chunks():
@@ -67,41 +55,47 @@ def _load_chunks():
     return splitter.split_documents(docs)
 
 
-def build_or_load_store(force_rebuild: bool = False) -> Chroma:
-    global _store
-    if _store is not None and not force_rebuild:
-        return _store
+def _normalize(vectors: np.ndarray) -> np.ndarray:
+    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+    norms = np.clip(norms, 1e-12, None)
+    return vectors / norms
+
+
+def build_or_load_store(force_rebuild: bool = False):
+    """Build an in-memory embedding index from the knowledge base."""
+    global _chunks, _matrix, _ready
+
+    if _ready and not force_rebuild:
+        return True
 
     embeddings = get_embeddings()
-    client = _get_client()
-
-    if force_rebuild:
-        try:
-            client.delete_collection("it_helpdesk")
-        except Exception:
-            pass
-        _store = None
-
     chunks = _load_chunks()
-    _store = Chroma.from_documents(
-        documents=chunks,
-        embedding=embeddings,
-        client=client,
-        collection_name="it_helpdesk",
-    )
-    return _store
+    texts = [c.page_content for c in chunks]
+    vectors = np.array(embeddings.embed_documents(texts), dtype=np.float32)
+    _matrix = _normalize(vectors)
+    _chunks = chunks
+    _ready = True
+    return True
 
 
 def search_knowledge_base(query: str, k: int = TOP_K) -> list[dict[str, Any]]:
-    store = build_or_load_store()
-    results = store.similarity_search_with_score(query, k=k)
+    build_or_load_store()
+    assert _matrix is not None
+
+    embeddings = get_embeddings()
+    q = np.array(embeddings.embed_query(query), dtype=np.float32)
+    q = q / max(float(np.linalg.norm(q)), 1e-12)
+    scores = _matrix @ q
+    top_idx = np.argsort(scores)[::-1][:k]
+
     out: list[dict[str, Any]] = []
-    for doc, score in results:
+    for i in top_idx:
+        doc = _chunks[int(i)]
         out.append(
             {
                 "content": doc.page_content,
                 "source": doc.metadata.get("source", "unknown"),
-                "score": float(score),
+                "score": float(scores[int(i)]),
             }
         )
     return out

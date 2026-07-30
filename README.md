@@ -43,7 +43,7 @@ User (Streamlit / API)
         ▼
  LangGraph Agent
         │
-        ├── search_knowledge_base  → ChromaDB + embeddings
+        ├── search_knowledge_base  → embeddings + vector search
         ├── check_system_status
         ├── create_ticket
         ├── lookup_ticket
@@ -65,7 +65,7 @@ User (Streamlit / API)
 | Agent | LangGraph + LangChain |
 | LLM | Groq (`llama-3.3-70b-versatile`) / OpenAI optional |
 | Embeddings | FastEmbed (`all-MiniLM-L6-v2`) |
-| Vector DB | ChromaDB (ephemeral on cloud) |
+| Vector retrieval | In-memory cosine similarity index |
 | Validation | Pydantic |
 | Config | python-dotenv / Streamlit secrets |
 
