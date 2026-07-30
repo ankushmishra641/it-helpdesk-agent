@@ -1,0 +1,17 @@
+.env
+.chroma/
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.streamlit/secrets.toml
+*.egg-info/
+.DS_Store
+__pycache__/
+*.pdf
+build_pdf.py
+INTERVIEW_SCRIPT.md
+TOMORROW_CHECKLIST.md
+IT_Helpdesk_Agent_POC.md
+IT_Helpdesk_Agent_POC.pdf
