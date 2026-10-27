@@ -31,3 +31,11 @@ The audit is a point-in-time dependency check, not proof that the application ha
 ## Guided workflow extension — 27 October 2026
 
 33 regression tests passed locally against SQLite, including all three resolution paths, prerequisite escalation, employee-reported failure, wrong-session access, missing policy, malformed/unsafe model proposals, persistence, deletion cascades and concurrent approvals. Provider JSON success and failure are mocked in the suite. A browser walkthrough confirmed account recovery through Resolved with no captured console warnings/errors. A real Groq call is not established by these mock tests.
+
+### Hosted release verification
+
+Implementation commit: 032c400. CI run 40494627664 passed both 33-test suites (SQLite and PostgreSQL 16), JavaScript syntax and dependency audit.
+
+On 27 October 2026, the Render/Supabase deployment completed VPN repair, fictional account recovery and approved software fulfillment through verification and Resolved status in isolated test sessions. All three also passed with the provider disabled. After private Groq configuration, an actual chat response reported groq mode and all four case planning steps returned accepted Groq proposals: repair_vpn, verify_identity, recover_account and install_software. Test sessions were removed afterward. Evidence contains no API key, database credential or session token.
+
+The live app runs openai/gpt-oss-20b through Groq. Provider latency and available quota can still cause fallback on later requests. This verifies the stated demo scenarios, not general autonomous problem resolution or real account/device administration.
