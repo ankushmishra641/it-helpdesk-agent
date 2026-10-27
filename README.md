@@ -1,177 +1,93 @@
-# IT Helpdesk Agent
+# Northstar IT Service Desk
 
-### Agentic RAG assistant for internal IT support
+A working public helpdesk demonstration built around a fictional company. Visitors can search IT knowledge, ask a bounded LangGraph assistant, inspect simulated service health, create session-scoped tickets, and explore linked historical support records.
 
-An AI helpdesk that answers employee IT questions from company documentation and can take safe actions — check service status, create tickets, and reset passwords after identity verification.
+**Release scope:** public demonstration with synthetic data. Real identity verification, password resets, live monitoring, and ITSM integrations are deliberately not connected. This is not an enterprise production certification.
 
-Built with LangGraph agent orchestration, RAG over a vector store, a Streamlit UI, and a FastAPI backend.
+## Run locally
 
----
+Requires Python 3.12. No Node build, GPU, model download, or API key is needed.
 
-## Problem
+```powershell
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe -m uvicorn api:app --port 8000
+```
 
-IT teams handle many repetitive Level-1 requests:
+Open [http://localhost:8000](http://localhost:8000). Local SQLite is created automatically. On Linux/macOS use `.venv/bin/python` instead.
 
-- VPN not connecting
-- Password expired / account locked
-- Wi-Fi issues
-- Software install requests
+Copy `.env.example` to `.env` only when configuring overrides. Do not overwrite an existing secret file. For optional Groq explanations, set `GROQ_API_KEY` and explicitly set `LLM_PROVIDER=groq`. With no provider, the application returns useful source-backed procedures.
 
-This agent reduces that load by answering from internal docs and performing common support actions safely.
+## Experience
 
----
+- **Overview:** personal ticket counts, knowledge catalog and labeled service snapshot.
+- **Support assistant:** local BM25 retrieval, cited source cards, optional AI explanations, graceful provider fallback.
+- **My tickets:** persistent creation, ownership checks, details and retry-safe submission.
+- **Knowledge center:** searchable employee guides and service-desk runbooks.
+- **Service status:** 20 simulated services and 40 incident/maintenance records.
+- **Sample service desk:** 600 read-only historical tickets linked to 150 fictional employees, 250 assets and knowledge articles.
 
-## Features
-
-- RAG answers from internal IT docs (VPN, password, Wi-Fi, software, onboarding, FAQ)
-- LangGraph agent loop (reason → tool call → observe → answer)
-- Service status checks (VPN / Email / Wi-Fi / Intranet)
-- Ticket create + lookup
-- Guarded password reset (verified employee ID required)
-- Streamlit chat UI
-- REST API for integrations
-- MCP-style tool server for reusable tools
-- Offline fallback when no LLM key is set
-
----
+The source-controlled snapshot is dated 20 October 2026. Sample records are not customer data and are not live telemetry. Names are generated combinations; email addresses use the reserved `.example` domain.
 
 ## Architecture
 
-```text
-User (Streamlit / API)
-        │
-        ▼
- LangGraph Agent
-        │
-        ├── search_knowledge_base  → ChromaDB + embeddings
-        ├── check_system_status
-        ├── create_ticket
-        ├── lookup_ticket
-        └── reset_password (guarded)
-        │
-        ▼
- Grounded response to user
+```mermaid
+flowchart LR
+    B[Browser portal] --> A[FastAPI / session boundary]
+    A --> D[(SQLite locally / PostgreSQL hosted)]
+    A --> G[Bounded LangGraph workflow]
+    G --> K[Versioned Markdown / BM25]
+    G -. optional explanation .-> L[Groq]
+    A --> S[Read-only synthetic snapshot]
 ```
 
----
+The public frontend is plain HTML/CSS/JavaScript served by FastAPI. This avoids a separate frontend build/runtime and fits constrained free-tier hosting. The model cannot execute mutation tools. Ticket creation is a distinct, validated API action after explicit form confirmation.
 
-## Tech Stack
+## Deployment
 
-| Layer | Technology |
-|---|---|
-| Language | Python 3.12 |
-| UI | Streamlit |
-| API | FastAPI + Uvicorn |
-| Agent | LangGraph + LangChain |
-| LLM | Groq (`llama-3.3-70b-versatile`) / OpenAI optional |
-| Embeddings | FastEmbed (`all-MiniLM-L6-v2`) |
-| Vector DB | ChromaDB |
-| Agent | LangGraph + LangChain + Groq |
-| Validation | Pydantic |
-| Config | python-dotenv / Streamlit secrets |
+Use **Render Free + Supabase Free**. Start with `LLM_PROVIDER=none`, then optionally enable Groq. The app refuses SQLite when Render is detected, because local Render files are ephemeral.
 
----
+See [deployment instructions](docs/DEPLOYMENT.md), [operations runbook](docs/OPERATIONS.md), and [security model](docs/SECURITY.md). Free hosting can sleep, pause, or hit limits; it is not an always-on SLA.
 
-## Project structure
+## Verification
 
-```text
-it-helpdesk-agent/
-├── app.py                 # Streamlit UI
-├── api.py                 # REST API
-├── mcp_server.py          # MCP-style tool server
-├── requirements.txt
-├── .env.example
-├── knowledge_base/        # Internal IT documents
-└── src/
-    ├── agent.py           # LangGraph agent
-    ├── rag.py             # Ingestion + retrieval
-    ├── tools.py           # Tools
-    └── config.py          # Settings
+```powershell
+.venv\Scripts\python.exe -m unittest discover -s tests -v
+node --check web/app.js
 ```
 
----
+CI runs regression tests, JavaScript syntax checking and dependency auditing. The suite covers session isolation, authentication, expiry, idempotency including parallel retries, rate limits, provider fallback, injection attempts against account actions, retrieval cases, and synthetic-record consistency.
 
-## Quick start
+## Repository map
 
-```bash
-git clone https://github.com/ankushmishra641/it-helpdesk-agent.git
-cd it-helpdesk-agent
+| Path | Purpose |
+| --- | --- |
+| `api.py` | HTTP routes, request validation, limits, security headers, static portal |
+| `web/` | Responsive frontend with no third-party scripts |
+| `src/agent.py` | Bounded retrieval/explanation graph |
+| `src/database.py` | Schema bootstrap and transactional session-owned records |
+| `src/rag.py` | In-memory BM25 index; refresh replaces rather than appends |
+| `knowledge_base/ns-*.md` | 60 active guides and runbooks |
+| `knowledge_base/archive/` | Six original prototype notes, excluded from retrieval |
+| `data/demo.json` | Reproducible fictional organization snapshot |
+| `scripts/seed_demo.py` | Deterministic dataset generator |
+| `tests/` | Security and workflow regression tests |
+| `render.yaml`, `Dockerfile` | Deployment configuration |
+| `docs/` | Architecture, API, security, deployment, operations and project brief |
 
-python -m venv .venv
+The existing Streamlit `app.py` is retained as an optional **legacy local interface**; install `requirements-streamlit.txt` to use it. It is not the production entry point and does not provide the new portal's persistent session workflow. The unsafe standalone tool server is retired; no MCP compatibility is claimed.
 
-# Windows
-.venv\Scripts\activate
+## Demo limits and privacy
 
-# macOS / Linux
-source .venv/bin/activate
+Defaults: 50 new sessions/day globally, 10 new sessions/hour per observed IP, 80 messages and 20 tickets/session, 8 chat requests/minute/session, and 100 optional model calls/day globally. Provider calls are limited to two concurrently and 550 output tokens each. This is a request/token bound, not a currency budget.
 
-pip install -r requirements.txt
-cp .env.example .env
-```
+Sessions expire after seven days. Cleanup runs at startup and new-session creation. The visitor can delete their session and related records. Browser tab storage holds an opaque bearer token; database storage contains only its SHA-256 digest. Operators can access stored records, so visitors are told to use fictional details only.
 
-Add your key in `.env`:
+## Documentation
 
-```env
-GROQ_API_KEY=your_groq_api_key
-LLM_PROVIDER=groq
-```
-
-Run UI:
-
-```bash
-streamlit run app.py
-```
-
-Open http://localhost:8501
-
-Run API:
-
-```bash
-uvicorn api:app --reload --port 8000
-```
-
-Run MCP-style tools:
-
-```bash
-python mcp_server.py
-```
-
----
-
-## Example prompts
-
-- `I can't connect to VPN — is the service down?`
-- `How do I request new software?`
-- `Please reset my password` → blocked by guardrail
-- `Reset password for employee E1001` → allowed
-- `Create a ticket for my slow laptop`
-
-Verified demo employee IDs: `E1001`, `E1002`, `E2045`
-
----
-
-## Deploy (Streamlit Cloud)
-
-1. Open https://share.streamlit.io
-2. Deploy repo `ankushmishra641/it-helpdesk-agent`
-3. Branch: `master`
-4. Main file: `app.py`
-5. Add secret:
-
-```toml
-GROQ_API_KEY = "your_groq_api_key"
-```
-
----
-
-## Security notes
-
-- Never commit `.env` or API keys
-- Password reset requires verified identity
-- For production, connect real ITSM / identity systems
-
----
-
-## License
-
-MIT
+- [Project brief](docs/PROJECT_BRIEF.md)
+- [Architecture and data model](docs/ARCHITECTURE.md)
+- [API reference](docs/API.md)
+- [Security review](docs/SECURITY.md)
+- [Deployment guide](docs/DEPLOYMENT.md)
+- [Operating runbook](docs/OPERATIONS.md)

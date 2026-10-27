@@ -1,4 +1,12 @@
 .env
+.env.*
+!.env.example
+*.db
+*.db-shm
+*.db-wal
+.audit-venv/
+.verify-venv/
+artifacts/
 .chroma/
 .faiss_index/
 __pycache__/
@@ -11,6 +19,7 @@ venv/
 .DS_Store
 __pycache__/
 *.pdf
+!output/pdf/Northstar_Project_Brief.pdf
 build_pdf.py
 INTERVIEW_SCRIPT.md
 TOMORROW_CHECKLIST.md

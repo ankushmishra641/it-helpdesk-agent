@@ -1,53 +1,22 @@
-"""App configuration — env vars + Streamlit Cloud secrets."""
-from __future__ import annotations
-
+"""Explicit configuration: no UI imports and no secret output."""
 import os
 from pathlib import Path
-
 from dotenv import load_dotenv
-
-load_dotenv()
-
 ROOT_DIR = Path(__file__).resolve().parent.parent
-KB_DIR = ROOT_DIR / "knowledge_base"
-CHROMA_DIR = ROOT_DIR / ".chroma"
-
-
-def _secret(name: str, default: str = "") -> str:
-    value = os.getenv(name, "").strip()
-    if value:
-        return value
-    try:
-        import streamlit as st
-
-        if hasattr(st, "secrets") and name in st.secrets:
-            return str(st.secrets[name]).strip()
-    except Exception:
-        pass
-    return default
-
-
-GROQ_API_KEY = _secret("GROQ_API_KEY")
-OPENAI_API_KEY = _secret("OPENAI_API_KEY")
-
-LLM_PROVIDER = _secret("LLM_PROVIDER").lower()
-if not LLM_PROVIDER:
-    if GROQ_API_KEY:
-        LLM_PROVIDER = "groq"
-    elif OPENAI_API_KEY:
-        LLM_PROVIDER = "openai"
-    else:
-        LLM_PROVIDER = "none"
-
-GROQ_MODEL = _secret("GROQ_MODEL", "llama-3.3-70b-versatile")
-OPENAI_MODEL = _secret("OPENAI_MODEL", "gpt-4o-mini")
-# FastEmbed is lighter than PyTorch sentence-transformers (better for free cloud hosts)
-EMBEDDING_MODEL = _secret("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
-TOP_K = int(_secret("TOP_K", "4") or "4")
-
-
-def has_llm() -> bool:
-    return LLM_PROVIDER in {"groq", "openai"} and (
-        (LLM_PROVIDER == "groq" and bool(GROQ_API_KEY))
-        or (LLM_PROVIDER == "openai" and bool(OPENAI_API_KEY))
-    )
+load_dotenv(ROOT_DIR / '.env')
+KB_DIR = ROOT_DIR / 'knowledge_base'
+DATABASE_URL = os.getenv('DATABASE_URL', f'sqlite:///{ROOT_DIR / "helpdesk.db"}')
+if DATABASE_URL.startswith(('postgres://', 'postgresql://')):
+    DATABASE_URL = 'postgresql+psycopg://' + DATABASE_URL.split('://', 1)[1]
+GROQ_API_KEY = os.getenv('GROQ_API_KEY', '').strip()
+GROQ_MODEL = os.getenv('GROQ_MODEL', 'llama-3.3-70b-versatile')
+# A key alone must never silently enable spending.
+LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'none').lower()
+TOP_K = 3
+DAILY_LLM_LIMIT = int(os.getenv('DAILY_LLM_LIMIT', '100'))
+SESSION_DAYS = 7
+MAX_DAILY_SESSIONS = int(os.getenv('MAX_DAILY_SESSIONS', '50'))
+if os.getenv('RENDER') and DATABASE_URL.startswith('sqlite'):
+    raise RuntimeError('Render requires a persistent PostgreSQL DATABASE_URL. Local SQLite is for development only.')
+def has_llm():
+    return LLM_PROVIDER == 'groq' and bool(GROQ_API_KEY) and DAILY_LLM_LIMIT > 0

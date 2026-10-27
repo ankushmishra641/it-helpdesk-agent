@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#171d32"><meta name="description" content="Explore Northstar IT: an interactive, isolated helpdesk demonstration with knowledge search, support requests and service health."><title>Northstar • IT service desk</title><link rel="icon" href="/assets/icon.svg" type="image/svg+xml"><link rel="stylesheet" href="/assets/styles.css"><script src="/assets/app.js" defer></script></head>
+<body><a class="skip" href="#main">Skip to content</a>
+<div class="shell">
+<aside class="sidebar" aria-label="Primary navigation">
+<a class="brand" href="#overview"><span class="brand-icon">✳</span><span>NORTHSTAR<small>IT SERVICE DESK</small></span></a>
+<div class="workspace"><span class="workspace-icon">N</span><div>Northstar Systems<small>Demo workspace</small></div><span class="workspace-mark">⌄</span></div>
+<p class="nav-label">WORKSPACE</p>
+<nav id="nav">
+<a href="#overview" data-page="overview"><span>◫</span>Overview</a>
+<a href="#assistant" data-page="assistant"><span>✧</span>Support assistant<span class="nav-pill">AI</span></a>
+<a href="#tickets" data-page="tickets"><span>▤</span>My tickets<span id="ticket-count" class="nav-count">0</span></a>
+<a href="#knowledge" data-page="knowledge"><span>▧</span>Knowledge center</a>
+<a href="#status" data-page="status"><span>◉</span>Service status</a>
+<p class="nav-label">EXPLORE THE DEMO</p>
+<a href="#records" data-page="records"><span>▦</span>Sample service desk</a>
+</nav>
+<div class="sidebar-bottom"><div class="demo-callout"><span class="tiny-label">A SAFE PLACE TO EXPLORE</span><p>Real workflows.<br>Fictional company.</p><small>Your requests stay in your own demo session.</small></div>
+<button class="profile" id="privacy-button"><span class="avatar">DG</span><span>Demo guest<small>Session & privacy</small></span><span>↗</span></button></div>
+</aside>
+<div class="app">
+<header class="topbar"><div class="breadcrumb">Workspace <span>/</span> <strong id="page-label">Overview</strong></div><div class="top-actions"><span class="demo-tag"><i></i>PUBLIC DEMO</span><button class="button compact" id="header-ticket">＋ New ticket</button></div></header>
+<div class="notice"><span>✧</span><p>Explore a working helpdesk with synthetic data. No real accounts or company systems are connected.</p><a href="#assistant">Try a scenario <span>↗</span></a></div>
+<main id="main" tabindex="-1"><div class="loading-page"><span class="spinner"></span><h1>Preparing your workspace</h1><p>Starting a private demo session…</p></div></main>
+<footer>Northstar IT <button class="link" data-privacy>Session & privacy</button><a href="#status">Demo snapshot · 20 Oct 2026</a></footer>
+</div></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<dialog id="modal" aria-labelledby="modal-title"><div id="modal-body"></div><button class="dialog-close" id="close-modal" aria-label="Close dialog">×</button></dialog>
+</body></html>
