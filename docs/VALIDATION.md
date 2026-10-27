@@ -27,3 +27,7 @@ Authentication, visitor isolation, expiry, deletion, persistent records, idempot
 The Supabase-specific pooler, dedicated role and schema grants; Render deployment and wake behavior; public HTTPS end-to-end tests; backup restoration; live Groq model availability and answer quality. PostgreSQL CI success does not establish Supabase configuration correctness or a production SLA.
 
 The audit is a point-in-time dependency check, not proof that the application has no vulnerabilities.
+
+## Guided workflow extension — 27 October 2026
+
+33 regression tests passed locally against SQLite, including all three resolution paths, prerequisite escalation, employee-reported failure, wrong-session access, missing policy, malformed/unsafe model proposals, persistence, deletion cascades and concurrent approvals. Provider JSON success and failure are mocked in the suite. A browser walkthrough confirmed account recovery through Resolved with no captured console warnings/errors. A real Groq call is not established by these mock tests.

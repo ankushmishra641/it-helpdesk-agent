@@ -57,7 +57,7 @@ The first startup creates schema version 1. If readiness fails, inspect credenti
 
 ## 3. Optional AI mode
 
-Set GROQ_API_KEY privately in Render and change LLM_PROVIDER to groq. Redeploy. Groq calls are bounded to 100/day by default, 2 concurrent calls, 1500-character questions and 550 output tokens. Exceeding the allowance or encountering a provider failure falls back to local knowledge. Confirm the model is available in your account.
+Set GROQ_API_KEY privately in Render and change LLM_PROVIDER to groq. Redeploy. Groq calls are bounded to 100/day by default, 2 concurrent calls, 1500-character questions and 1,800 completion tokens. Exceeding the allowance or encountering a provider failure falls back to local knowledge. Confirm the model is available in your account.
 
 The AI key never appears in client JavaScript. The application remains functional without it.
 

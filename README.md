@@ -18,6 +18,12 @@ Open [http://localhost:8000](http://localhost:8000). Local SQLite is created aut
 
 Copy `.env.example` to `.env` only when configuring overrides. Do not overwrite an existing secret file. For optional Groq explanations, set `GROQ_API_KEY` and explicitly set `LLM_PROVIDER=groq`. With no provider, the application returns useful source-backed procedures.
 
+## Guided resolution
+
+Three persistent workflows investigate and resolve fictional VPN, account-access and software issues. Start one from an assistant suggestion or open an existing ticket and select **Start a guided demo workflow**. LangGraph retrieves procedures, inspects the isolated resource and asks Groq to propose an allowed next tool. A policy gate and explicit confirmation protect each mutation. Tool verification and employee confirmation are required before resolution. Failures go to a clearly labeled fictional specialist queue.
+
+Without a key, on timeout or quota exhaustion, the same safe workflow uses its documented deterministic plan. The UI identifies the mode on each case. See [workflow design and demo script](docs/AGENT_WORKFLOWS.md).
+
 ## Experience
 
 - **Overview:** personal ticket counts, knowledge catalog and labeled service snapshot.
@@ -64,6 +70,8 @@ CI runs regression tests, JavaScript syntax checking and dependency auditing. Th
 | --- | --- |
 | `api.py` | HTTP routes, request validation, limits, security headers, static portal |
 | `web/` | Responsive frontend with no third-party scripts |
+| `src/workflows.py` | Persistent diagnosis, tool policies, verification and case transitions |
+| `src/llm.py` | Bounded Groq JSON planning |
 | `src/agent.py` | Bounded retrieval/explanation graph |
 | `src/database.py` | Schema bootstrap and transactional session-owned records |
 | `src/rag.py` | In-memory BM25 index; refresh replaces rather than appends |
@@ -79,7 +87,7 @@ The existing Streamlit `app.py` is retained as an optional **legacy local interf
 
 ## Demo limits and privacy
 
-Defaults: 50 new sessions/day globally, 10 new sessions/hour per observed IP, 80 messages and 20 tickets/session, 8 chat requests/minute/session, and 100 optional model calls/day globally. Provider calls are limited to two concurrently and 550 output tokens each. This is a request/token bound, not a currency budget.
+Defaults: 50 new sessions/day globally, 10 new sessions/hour per observed IP, 80 messages and 20 tickets/session, 8 chat requests/minute/session, and 100 optional model calls/day globally. Provider calls are limited to two concurrently and 1,800 completion tokens each. This is a request/token bound, not a currency budget.
 
 Sessions expire after seven days. Cleanup runs at startup and new-session creation. The visitor can delete their session and related records. Browser tab storage holds an opaque bearer token; database storage contains only its SHA-256 digest. Operators can access stored records, so visitors are told to use fictional details only.
 

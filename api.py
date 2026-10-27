@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 from sqlalchemy import select
 from src import database as db
+from src import workflows
 from src.agent import run_agent
 from src.catalog import catalog
 from src.config import ROOT_DIR, has_llm
@@ -52,6 +53,11 @@ class TicketRequest(StrictModel):
     category: Literal['Network', 'Identity', 'Software', 'Hardware', 'General'] = 'General'
     priority: Literal['Low', 'Medium', 'High'] = 'Medium'
     request_key: UUID
+class WorkflowStart(StrictModel):
+    kind: Literal['vpn', 'account', 'software']
+class WorkflowAction(StrictModel):
+    revision: int = Field(ge=0, le=30)
+    action: Literal['diagnose', 'internet_down', 'outage', 'unapproved', 'approve', 'escalate', 'resolved', 'still_failing']
 def session(request: Request):
     token = request.headers.get('X-Demo-Token', '')
     sid = db.identify(token)
@@ -133,7 +139,26 @@ def ticket_detail(ticket_id: str, sid=Depends(session)):
     ticket = db.get_ticket(sid, ticket_id)
     if not ticket:
         raise HTTPException(404, 'Ticket not found.')
-    return ticket
+    return {**ticket, 'workflow': workflows.public(w) if (w := workflows.get(sid, ticket_id)) else None,
+            'suggested_workflow': workflows.suggest(ticket['summary'] + ' ' + ticket['description'])}
+@app.post('/api/tickets/{ticket_id}/workflow')
+def start_workflow(ticket_id: str, req: WorkflowStart, sid=Depends(session)):
+    throttle('workflow:' + sid, 20)
+    try:
+        return workflows.public(workflows.start(sid, ticket_id, req.kind))
+    except LookupError as error:
+        raise HTTPException(404, str(error))
+    except ValueError as error:
+        raise HTTPException(409, str(error))
+@app.post('/api/tickets/{ticket_id}/workflow/action')
+def workflow_action(ticket_id: str, req: WorkflowAction, sid=Depends(session)):
+    throttle('workflow:' + sid, 20)
+    try:
+        return workflows.public(workflows.advance(sid, ticket_id, req.revision, req.action))
+    except LookupError as error:
+        raise HTTPException(404, str(error))
+    except ValueError as error:
+        raise HTTPException(409, str(error))
 @app.post('/api/tickets', status_code=201)
 def new_ticket(req: TicketRequest, sid=Depends(session)):
     throttle('ticket:' + sid, 10)

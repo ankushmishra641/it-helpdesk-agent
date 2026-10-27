@@ -39,6 +39,10 @@ audit = Table('audit_events', metadata,
 budgets = Table('llm_daily_budget', metadata, Column('day', String(10), primary_key=True), Column('used', Integer, nullable=False))
 versions = Table('schema_version', metadata, Column('version', Integer, primary_key=True))
 session_budget = Table('session_daily_budget', metadata, Column('day', String(10), primary_key=True), Column('used', Integer, nullable=False))
+workflows = Table('case_workflows', metadata,
+    Column('ticket_id', String(40), ForeignKey('tickets.id', ondelete='CASCADE'), primary_key=True),
+    Column('session_id', String(64), ForeignKey('demo_sessions.id', ondelete='CASCADE'), nullable=False),
+    Column('revision', Integer, nullable=False), Column('state', Text, nullable=False))
 def now():
     return datetime.now(timezone.utc).isoformat()
 def init_db():

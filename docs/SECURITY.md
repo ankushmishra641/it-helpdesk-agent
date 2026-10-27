@@ -44,3 +44,7 @@ Expiry checks happen on every authenticated route. Expired sessions are deleted 
 - Do not connect real employee data until a separate security/privacy review and enterprise authorization design is complete.
 - Free tiers provide no always-on or backup SLA.
 - Database restore, live PostgreSQL integration, real provider quality and deployed smoke tests must be verified in the target environment.
+
+## Simulated resolution tools
+
+The planner proposes only a policy-allowed next tool or escalation. JSON structure and tool names are validated. A separate confirmed API transition enforces current stage, resource preconditions, ownership and revision. Tool effects are limited to ticket-local fictional state; no shell, package installer or identity-provider call is present. Demo identity verification is not authentication. Concurrent approvals commit once. Ticket resolution requires a passed resource check plus employee confirmation. Model prose may still be inaccurate; the UI separates AI proposals from deterministic tool evidence.

@@ -47,3 +47,7 @@ Bodies are limited to 16 KiB including streamed bodies. Chat messages: 2-1500 ch
 401: missing/expired session. 404: inaccessible or missing record. 409: conflicting idempotency payload or ticket allowance reached. 413: body too large. 422: schema validation. 429: session, IP or daily quota. 503: internal dependency unavailable.
 
 Readiness does not verify a live Groq response. No OpenAPI browser or legacy /chat or /mcp/call_tool endpoint is exposed on this public demo.
+
+## Guided case endpoints
+
+All require X-Demo-Token. GET /api/tickets/{id} includes workflow and suggested_workflow. POST /api/tickets/{id}/workflow accepts {"kind":"vpn"}, "account" or "software". Repeating a start is idempotent. POST /api/tickets/{id}/workflow/action accepts {"revision":0,"action":"diagnose"}. Use actions returned by the current workflow. Unknown fields are rejected; stale revisions and invalid transitions return 409; other sessions receive 404. Limit: 20 workflow requests/minute/session.

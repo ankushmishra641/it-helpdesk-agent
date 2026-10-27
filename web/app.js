@@ -4,9 +4,9 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const main = $('#main'), modal = $('#modal'), modalBody = $('#modal-body');
 let token = sessionStorage.getItem('northstar-demo-token'), boot, page = '', routeVersion = 0;
 let conversation = [], sending = false, currentRecords = [], recordPage = 1, recordQuery = '', articles = [];
-let toastTimer, ticketKey;
+let toastTimer, ticketKey, draftWorkflow = null;
 const labels = {overview:'Overview',assistant:'Support assistant',tickets:'My tickets',knowledge:'Knowledge center',status:'Service status',records:'Sample service desk'};
-const scenarios = ['I cannot connect to VPN', 'My laptop is running slowly', 'How do I request new software?', 'I lost my MFA phone'];
+const scenarios = ['I cannot connect to VPN', 'I need password reset assistance', 'How do I request new software?'];
 function toast(text){ $('#toast').textContent = text; $('#toast').classList.add('visible'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>$('#toast').classList.remove('visible'),5000); }
 async function api(path, options={}){
   const headers = {...(options.body ? {'Content-Type':'application/json'} : {}), ...(token ? {'X-Demo-Token':token}:{}), ...options.headers};
@@ -34,7 +34,7 @@ function overview(){
   const operational=boot.services.filter(s=>s.status==='Operational').length;
   main.innerHTML=heading('YOUR WORKDAY, CONNECTED','Good to have you here.','Everything you need to get back to doing your best work.','<span class="date-chip">◷ Demo snapshot · 20 Oct 2026</span>')+
   '<div class="stats">'+[
-    ['Your open tickets',boot.tickets.filter(t=>t.status==='Open').length,'Requests in your demo session','▤'],
+    ['Your open tickets',boot.tickets.filter(t=>t.status!=='Resolved').length,'Requests in your demo session','▤'],
     ['Knowledge articles',boot.articles,'Guides, policies & troubleshooting','▧'],
     ['Services operational',operational+' <small>/ '+boot.services.length+'</small>','Simulated service health','◉'],
     ['Sample requests',boot.counts.tickets,'Explore realistic support workflows','▦']
@@ -51,7 +51,7 @@ function overview(){
 function chatMessage(m){
   return '<div class="message '+esc(m.role)+'"><span class="message-icon">'+(m.role==='user'?'D':'✧')+'</span><div class="message-content"><div class="message-label">'+(m.role==='user'?'YOU':'NORTHSTAR ASSISTANT · '+(m.mode==='groq'?'AI EXPLANATION':'KNOWLEDGE SEARCH'))+'</div><div class="message-text">'+esc(m.content)+'</div>'+
   (m.sources?.length?'<div class="source-chips">'+m.sources.map(s=>'<button data-article="'+esc(s.id)+'">▧ '+esc(s.title)+'</button>').join('')+'</div>':'')+
-  (m.action?'<div class="spaced"><button class="button" data-draft="'+esc(m.action.summary)+'" data-category="'+esc(m.action.category)+'">Review ticket draft ↗</button></div>':'')+
+  (m.action?'<div class="spaced"><button data-workflow="'+esc(m.action.kind||'')+'" class="button" data-draft="'+esc(m.action.summary)+'" data-category="'+esc(m.action.category)+'">'+(m.action.type==='workflow'?'Start guided demo case':'Review ticket draft')+' ↗</button></div>':'')+
   (m.trace?.length?'<details class="trace"><summary>How this answer was prepared</summary><ul>'+m.trace.map(t=>'<li>'+esc(t)+'</li>').join('')+'</ul></details>':'')+'</div></div>';
 }
 function renderMessages(){
@@ -62,7 +62,7 @@ function renderMessages(){
 }
 function assistant(){
   main.innerHTML=heading('SUPPORT, WITHOUT THE WAIT','Your IT copilot.','Grounded guidance. Clear sources. You stay in control.')+
-  '<div class="assistant-layout"><section class="card chat-panel"><div class="card-head"><h2>Support assistant</h2><span class="badge purple">'+(boot.ai_available?'AI + knowledge search':'Local knowledge search')+'</span></div><div id="chat-messages" class="chat-messages" aria-live="polite" aria-label="Conversation"></div><form id="chat-form" class="composer"><div class="composer-inner"><textarea id="chat-input" aria-label="Describe your IT issue" maxlength="1500" placeholder="Tell us what’s getting in your way…" rows="2" required></textarea><button class="button primary" type="submit" id="send-chat" aria-label="Send message" '+(sending?'disabled':'')+'>↑</button></div><small>Use fictional details only. '+(boot.ai_available?'Messages and retrieved guides may be sent to Groq. ':'')+'Never share passwords, MFA codes or private information.</small><p id="chat-error" class="error-text" role="alert"></p></form></section><div class="stack"><section class="card"><div class="card-head"><h2>Here to help with</h2></div><div class="helper-list"><div><strong>▧ Find a reliable answer</strong><p>Search approved fictional IT guides and inspect the sources.</p></div><div><strong>◉ Understand service issues</strong><p>Check a clearly labeled snapshot of our demo services.</p></div><div><strong>▤ Prepare a support ticket</strong><p>Review every request before it is created.</p></div><div><strong>⌘ Keep access safe</strong><p>Real password resets and account changes are disabled.</p></div></div></section><section class="card"><div class="card-body"><h3>Not sure where to start?</h3><p class="spaced">Include the application, what you expected, and the error you saw.</p><button class="link" data-prompt="I cannot connect to VPN">Try the VPN scenario ↗</button></div></section></div></div>';
+  '<div class="assistant-layout"><section class="card chat-panel"><div class="card-head"><h2>Support assistant</h2><span class="badge purple">'+(boot.ai_available?'AI + knowledge search':'Local knowledge search')+'</span></div><div id="chat-messages" class="chat-messages" aria-live="polite" aria-label="Conversation"></div><form id="chat-form" class="composer"><div class="composer-inner"><textarea id="chat-input" aria-label="Describe your IT issue" maxlength="1500" placeholder="Tell us what’s getting in your way…" rows="2" required></textarea><button class="button primary" type="submit" id="send-chat" aria-label="Send message" '+(sending?'disabled':'')+'>↑</button></div><small>Use fictional details only. '+(boot.ai_available?'Messages and retrieved guides may be sent to Groq. ':'')+'Never share passwords, MFA codes or private information.</small><p id="chat-error" class="error-text" role="alert"></p></form></section><div class="stack"><section class="card"><div class="card-head"><h2>Here to help with</h2></div><div class="helper-list"><div><strong>▧ Find a reliable answer</strong><p>Search approved fictional IT guides and inspect the sources.</p></div><div><strong>◉ Understand service issues</strong><p>Check a clearly labeled snapshot of our demo services.</p></div><div><strong>▤ Prepare a support ticket</strong><p>Start a guided case, follow its diagnosis, approve a demo action and confirm resolution.</p></div><div><strong>⌘ Keep access safe</strong><p>Resolve fictional VPN, account-access and software issues through confirmed, audited demo tools. Real accounts and devices are never changed.</p></div></div></section><section class="card"><div class="card-body"><h3>Not sure where to start?</h3><p class="spaced">Include the application, what you expected, and the error you saw.</p><button class="link" data-prompt="I cannot connect to VPN">Try the VPN scenario ↗</button></div></section></div></div>';
   renderMessages();
 }
 async function sendMessage(text){
@@ -80,20 +80,32 @@ async function ticketsPage(version){
   '<section class="card"><div class="card-head"><h2>My tickets</h2><small>'+boot.tickets.length+' requests · demo only</small></div>'+(boot.tickets.length?ticketTable(boot.tickets):emptyTickets())+'</section>'+
   '<p class="dataset-note spaced">These are your requests, not the fictional company’s historical records. Demo tickets are not routed to a real IT team.</p>';
 }
-function newTicket(summary='',category='General'){
+function newTicket(summary='',category='General',kind=null){
+  draftWorkflow=kind;
   ticketKey=crypto.randomUUID();
-  openModal('<div class="eyebrow">NEW SUPPORT REQUEST</div><h2 id="modal-title">Let’s get this sorted.</h2><p>Review your request before creating a demo ticket.</p><form id="ticket-form"><label class="form-field">Summary<input name="summary" minlength="5" maxlength="160" required value="'+esc(summary)+'" placeholder="A short description of the issue"></label><label class="form-field">What happened?<textarea name="description" minlength="10" maxlength="3000" required placeholder="What were you trying to do? Include the error and steps already tried. Use fictional details only."></textarea></label><div class="form-row"><label class="form-field">Category<select name="category">'+['General','Network','Identity','Software','Hardware'].map(x=>'<option '+(x===category?'selected':'')+'>'+x+'</option>').join('')+'</select></label><label class="form-field">Impact<select name="priority"><option value="Low">Low · workaround available</option><option value="Medium" selected>Medium · one person blocked</option><option value="High">High · multiple people affected</option></select></label></div><div class="form-note">This creates a simulated request in your session. No real IT team is notified. Do not include credentials or personal information.</div><p class="error-text" id="ticket-error" role="alert"></p><div class="form-actions"><button type="button" class="button" data-close>Cancel</button><button type="submit" class="button primary" id="confirm-ticket">Confirm & create ticket ↗</button></div></form>');
+  openModal('<div class="eyebrow">NEW SUPPORT REQUEST</div><h2 id="modal-title">Let’s get this sorted.</h2><p>Review your request before creating a demo ticket.</p>'+(kind?'<div class="form-note">This starts the '+esc(kind)+' agent workflow on fictional resources. The agent will ask for confirmation before changes. When AI is enabled, case details and retrieved guides are sent to Groq.</div>':'')+'<form id="ticket-form"><label class="form-field">Summary<input name="summary" minlength="5" maxlength="160" required value="'+esc(summary)+'" placeholder="A short description of the issue"></label><label class="form-field">What happened?<textarea name="description" minlength="10" maxlength="3000" required placeholder="What were you trying to do? Include the error and steps already tried. Use fictional details only.">'+(kind?esc('Demo scenario: '+summary+'. Please investigate using the documented procedure.'):'')+'</textarea></label><div class="form-row"><label class="form-field">Category<select name="category">'+['General','Network','Identity','Software','Hardware'].map(x=>'<option '+(x===category?'selected':'')+'>'+x+'</option>').join('')+'</select></label><label class="form-field">Impact<select name="priority"><option value="Low">Low · workaround available</option><option value="Medium" selected>Medium · one person blocked</option><option value="High">High · multiple people affected</option></select></label></div><div class="form-note">This creates a simulated request in your session. No real IT team is notified. Do not include credentials or personal information.</div><p class="error-text" id="ticket-error" role="alert"></p><div class="form-actions"><button type="button" class="button" data-close>Cancel</button><button type="submit" class="button primary" id="confirm-ticket">Confirm & create ticket ↗</button></div></form>');
 }
 async function submitTicket(form){
   const data=Object.fromEntries(new FormData(form));data.request_key=ticketKey;$('#confirm-ticket').disabled=true;
-  try{const t=await api('/tickets',{method:'POST',body:JSON.stringify(data)});if(!boot.tickets.some(x=>x.id===t.id))boot.tickets.unshift(t);updateCount();closeModal();toast('Ticket created: '+t.id);location.hash='tickets';await route();}
-  catch(e){$('#ticket-error').textContent=e.message;$('#confirm-ticket').disabled=false;}
+  try{const t=await api('/tickets',{method:'POST',body:JSON.stringify(data)});if(!boot.tickets.some(x=>x.id===t.id))boot.tickets.unshift(t);updateCount();closeModal();toast('Ticket created: '+t.id);location.hash='tickets';await route();if(draftWorkflow)await api('/tickets/'+encodeURIComponent(t.id)+'/workflow',{method:'POST',body:JSON.stringify({kind:draftWorkflow})});draftWorkflow=null;await viewTicket(t.id);}
+  catch(e){if($('#ticket-error')){$('#ticket-error').textContent=e.message;$('#confirm-ticket').disabled=false;}else toast('Ticket saved; reopen it to continue. '+e.message);}
 }
 async function viewTicket(id,sample=false){
   const t=sample?currentRecords.find(t=>t.id===id):await api('/tickets/'+encodeURIComponent(id));
   if(!t)return;
   openModal('<div class="eyebrow">'+(sample?'SYNTHETIC HISTORICAL RECORD':'YOUR DEMO REQUEST')+'</div><h2 id="modal-title">'+esc(t.summary)+'</h2><p>'+esc(t.id)+' · '+esc(t.category)+' · '+stamp(t.created_at)+'</p>'+badge(t.status)+' '+badge(t.priority)+
-  (sample?'<p class="spaced">'+esc(t.requester)+' · '+esc(t.department)+' · Asset '+esc(t.asset_id)+'</p><div class="timeline">'+t.timeline.map(x=>'<div><small>'+esc(new Date(x.at).toLocaleString())+'</small><h3>'+esc(x.event)+'</h3><p>'+esc(x.note)+'</p></div>').join('')+'</div><button class="button" data-article="'+esc(t.article_id)+'">Read linked knowledge article ↗</button>':'<p class="article-text spaced">'+esc(t.description)+'</p><div class="timeline"><div><small>'+stamp(t.created_at)+'</small><h3>Request received</h3><p>Saved in your demo workspace. No real service team has been notified.</p></div></div>'));
+  (sample?'<p class="spaced">'+esc(t.requester)+' · '+esc(t.department)+' · Asset '+esc(t.asset_id)+'</p><div class="timeline">'+t.timeline.map(x=>'<div><small>'+esc(new Date(x.at).toLocaleString())+'</small><h3>'+esc(x.event)+'</h3><p>'+esc(x.note)+'</p></div>').join('')+'</div><button class="button" data-article="'+esc(t.article_id)+'">Read linked knowledge article ↗</button>':'<p class="article-text spaced">'+esc(t.description)+'</p><div class="timeline"><div><small>'+stamp(t.created_at)+'</small><h3>Request received</h3><p>Saved in your demo workspace. No real service team has been notified.</p></div></div>'+workflowPanel(t)));
+}
+function workflowPanel(t){
+  const w=t.workflow;
+  if(!w)return '<section class="workflow-panel"><div class="eyebrow">RESOLVE WITH THE AGENT</div><h3>Start a guided demo workflow</h3><p>Choose the issue to investigate. This creates a fictional resource for this ticket; it does not connect to a real account or device. When AI is enabled, case details and retrieved guides are sent to Groq.</p><div class="workflow-actions">'+Object.entries({vpn:'VPN connection',account:'Account / password recovery',software:'Software request'}).map(([kind,label])=>'<button class="button '+(kind===t.suggested_workflow?'primary':'')+'" data-flow-start="'+kind+'" data-case="'+esc(t.id)+'">'+label+'</button>').join('')+'</div></section>';
+  return '<section class="workflow-panel"><div class="eyebrow">GUIDED RESOLUTION · SIMULATED RESOURCES</div><h3>'+esc({vpn:'VPN repair',account:'Account recovery',software:'Software fulfillment'}[w.kind])+'</h3><div class="spaced">'+badge(w.stage.replaceAll('_',' '))+' '+badge(w.mode==='groq'?'LLM + RAG plan':'Documented workflow fallback')+'</div><p class="article-text">'+esc(w.explanation)+'</p>'+(w.mode==='groq'?'<small>AI proposal; only the tool results below establish what happened.</small>':'')+
+  (w.sources.length?'<div class="source-chips">'+w.sources.map(a=>'<button data-article="'+esc(a.id)+'">▧ '+esc(a.title)+'</button>').join('')+'</div>':'')+
+  (w.verification?'<p class="form-note">'+(w.verification.passed?'✓':'!')+' '+esc(w.verification.check)+' · '+(w.verification.passed?'PASS':'FAIL')+'</p>':'')+
+  '<div class="workflow-actions">'+w.actions.map(a=>'<button class="button '+(['approve','resolved','diagnose'].includes(a.id)?'primary':'')+'" data-flow-action="'+esc(a.id)+'" data-case="'+esc(t.id)+'" data-revision="'+w.revision+'">'+esc(a.label)+'</button>').join('')+'</div><details class="trace"><summary>Fictional resource state</summary><pre class="resource-state">'+esc(JSON.stringify(w.resource,null,2))+'</pre></details><div class="timeline">'+w.events.map(e=>'<div><small>'+esc(new Date(e.at).toLocaleString())+'</small><h3>'+esc(e.event)+'</h3><p>'+esc(e.note)+'</p></div>').join('')+'</div></section>';
+}
+async function refreshCase(id){
+  boot.tickets=(await api('/tickets')).tickets;updateCount();await route();await viewTicket(id);
 }
 async function knowledgePage(version){
   const data=await api('/knowledge');if(version!==routeVersion)return;articles=data.articles;
@@ -153,7 +165,7 @@ function privacy(){
 async function start(){
   try{
     if(!token){const s=await api('/session',{method:'POST'});token=s.token;sessionStorage.setItem('northstar-demo-token',token);}
-    boot=await api('/bootstrap');const h=await api('/history');conversation=h.messages;updateCount();await route();
+    boot=await api('/bootstrap');$('#ai-mode').textContent=boot.ai_available?'AI':'KB';const h=await api('/history');conversation=h.messages;updateCount();await route();
   }catch(e){errorScreen(e);}
 }
 document.addEventListener('click',async e=>{
@@ -161,7 +173,9 @@ document.addEventListener('click',async e=>{
   try{
     if(target.matches('[data-new-ticket]')||target.id==='header-ticket'){if(boot)newTicket();}
     else if(target.dataset.prompt){const text=target.dataset.prompt;location.hash='assistant';await route();await sendMessage(text);}
-    else if(target.dataset.draft)newTicket(target.dataset.draft,target.dataset.category);
+    else if(target.dataset.draft)newTicket(target.dataset.draft,target.dataset.category,target.dataset.workflow||null);
+    else if(target.dataset.flowStart){target.disabled=true;try{await api('/tickets/'+encodeURIComponent(target.dataset.case)+'/workflow',{method:'POST',body:JSON.stringify({kind:target.dataset.flowStart})});await refreshCase(target.dataset.case);}catch(err){target.disabled=false;throw err;}}
+    else if(target.dataset.flowAction){target.disabled=true;try{await api('/tickets/'+encodeURIComponent(target.dataset.case)+'/workflow/action',{method:'POST',body:JSON.stringify({revision:Number(target.dataset.revision),action:target.dataset.flowAction})});await refreshCase(target.dataset.case);}catch(err){target.disabled=false;await viewTicket(target.dataset.case);throw err;}}
     else if(target.dataset.article)await viewArticle(target.dataset.article);
     else if(target.dataset.ticket)await viewTicket(target.dataset.ticket);
     else if(target.dataset.record)await viewTicket(target.dataset.record,true);

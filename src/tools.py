@@ -8,7 +8,7 @@ def tool_check_system_status(service):
     found = next((s for s in catalog()['services'] if key in (s['id'], s['name'].lower())), None)
     return f"Simulated service snapshot: {found['name']} — {found['status']}. {found['note']}" if found else 'Service not found in the demo catalog.'
 def tool_reset_password(employee_id='', verified=False):
-    return 'GUARDRAIL BLOCKED: this public demo cannot reset passwords. An employee ID or a caller-supplied verification flag is not proof of identity. Use the account-access guide or submit an Identity ticket. No account was changed.'
+    return 'Real password resets are disabled. I can help you follow the account-access guide or recover a fictional account through a guided demo case. No account was changed. Never share your password or MFA code here.'
 def tool_create_ticket(summary, priority='Medium', category='General'):
     return 'Open the ticket form to review and confirm this request. No ticket has been created.'
 def tool_lookup_ticket(ticket_id):

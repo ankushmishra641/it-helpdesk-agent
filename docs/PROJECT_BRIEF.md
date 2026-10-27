@@ -8,7 +8,7 @@ Demonstrate a realistic employee support experience: explain IT procedures with 
 Six connected views cover overview, assistant, personal tickets, knowledge, service status and sample historical requests. The portal uses a restrained indigo/neutral design, responsive navigation, keyboard focus states, native dialogs and escaped text rendering.
 
 ### Dataset
-60 active articles across Network, Identity, Software, Hardware and General support. Thirty employee procedures each have a corresponding service-desk runbook. A deterministic seed creates 150 fictional employees, 250 assigned assets, 600 linked requests, 20 services and 40 incident/maintenance records. Historical records have timelines and linked articles. The source snapshot is dated 20 October 2026.
+63 active articles across Network, Identity, Software, Hardware and General support. Thirty employee procedures each have a corresponding service-desk runbook, plus three executable-workflow policies. A deterministic seed creates 150 fictional employees, 250 assigned assets, 600 linked requests, 20 services and 40 incident/maintenance records. Historical records have timelines and linked articles. The source snapshot is dated 20 October 2026.
 
 ### Architecture
 FastAPI serves a buildless browser frontend. A bounded LangGraph workflow combines BM25 retrieval with optional Groq explanations. SQLAlchemy supports SQLite for development and PostgreSQL for deployment. Historical records are immutable JSON; new visitor records live in session-owned database rows.
@@ -24,3 +24,7 @@ Target: Render Free application plus Supabase Free PostgreSQL, accessed through 
 
 ### Enterprise roadmap
 SSO and role-based access, identity-provider verification, real ITSM integrations, distributed rate limiting, explicit database migrations, backup restore exercises, live monitoring, accessibility audit, broader retrieval evaluation and load/security testing.
+
+## Guided resolution extension
+
+VPN repair, fictional account recovery and approved VS Code fulfillment now have persistent diagnosis, LLM/RAG planning with fallback, confirmed simulated actions, post-action verification, employee-confirmed resolution and escalation. These are bounded human-in-the-loop workflows; no real accounts or devices are changed. See AGENT_WORKFLOWS.md for the demonstration script and private Groq configuration.

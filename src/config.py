@@ -9,7 +9,7 @@ DATABASE_URL = os.getenv('DATABASE_URL', f'sqlite:///{ROOT_DIR / "helpdesk.db"}'
 if DATABASE_URL.startswith(('postgres://', 'postgresql://')):
     DATABASE_URL = 'postgresql+psycopg://' + DATABASE_URL.split('://', 1)[1]
 GROQ_API_KEY = os.getenv('GROQ_API_KEY', '').strip()
-GROQ_MODEL = os.getenv('GROQ_MODEL', 'llama-3.3-70b-versatile')
+GROQ_MODEL = os.getenv('GROQ_MODEL', 'openai/gpt-oss-20b')
 # A key alone must never silently enable spending.
 LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'none').lower()
 TOP_K = 3

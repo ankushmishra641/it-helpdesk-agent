@@ -4,7 +4,7 @@
 
 The public application has one origin and one Python worker. FastAPI serves both the static portal and JSON endpoints. Same-origin requests require no permissive CORS policy. Static assets contain no provider credentials.
 
-A two-node LangGraph workflow retrieves evidence and then prepares an answer. Local BM25 retrieval is the default: the 60-document corpus is small, predictable and version-controlled. Token normalization, title weighting, relevance thresholds and paired-guide deduplication improve topic matching. The index is rebuilt into a new list when source file signatures change; no persistent collection accumulates duplicates. Retrieval is lexical rather than semantic, and relevance thresholds are heuristics.
+A two-node LangGraph workflow retrieves evidence and then prepares an answer. Local BM25 retrieval is the default: the small document corpus is small, predictable and version-controlled. Token normalization, title weighting, relevance thresholds and paired-guide deduplication improve topic matching. The index is rebuilt into a new list when source file signatures change; no persistent collection accumulates duplicates. Retrieval is lexical rather than semantic, and relevance thresholds are heuristics.
 
 Groq is an optional explanation provider. Only retrieved documentation, the current question and up to four prior messages are sent. A model response has no write capability. Account-recovery requests are blocked deterministically; ticket intent produces a draft action for the frontend form. Ticket lookup is constrained by the server session.
 
@@ -39,6 +39,12 @@ Render web service -> Supabase PostgreSQL Session pooler over TLS.
 
 Use one Uvicorn worker because short-term rate limits and provider concurrency are in-process. Durable daily quotas and records are database-backed. Horizontal scaling requires a shared rate limiter and distributed concurrency control.
 
+## Resolution workflow extension
+
+`case_workflows` is an additive table keyed by ticket ID, with session ownership, revision, and JSON resource state, observations, proposal, sources, verification and event history. Creating this table does not alter old columns or erase tickets. A conditional revision update commits the simulated mutation, ticket status and audit event atomically. Replayed actions receive 409; reload shows committed results.
+
+A second LangGraph executes retrieve_procedure -> inspect_demo_resource -> plan_next_tool. Groq receives case details, last four events, fixture observations and retrieved policy. Its JSON recommendation is checked against server-side preconditions. Missing policy blocks remediation. Only ticket-local fictional resources can change; no shell commands or identity APIs run.
+
 ## Known limits
 
-No authenticated enterprise users, email notifications, ticket assignment engine, comments/update API, live monitoring, SSO, real ITSM connector or password reset exists. The demo demonstrates creation and inspection; historical ticket timelines are seeded. Chat responses are delivered as a complete response, not token streaming. Provider availability is configuration state, not a continuous health probe.
+No authenticated enterprise users, email notifications, live monitoring, SSO, real ITSM connector or real password reset exists. Guided cases have persistent status updates and timelines; escalation assigns only a fictional queue. Demo identity verification is not authentication. Historical sample timelines remain seeded. Chat responses are delivered as a complete response, not token streaming. Provider availability is configuration state, not a continuous health probe.
