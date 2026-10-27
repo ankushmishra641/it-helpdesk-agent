@@ -1,105 +1,63 @@
-"""RAG ingestion + retrieval over the IT knowledge base (ChromaDB)."""
-from __future__ import annotations
-
-from pathlib import Path
-from typing import Any
-
-from langchain_community.document_loaders import DirectoryLoader, TextLoader
-from langchain_community.vectorstores import Chroma
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-
-from src.config import CHROMA_DIR, EMBEDDING_MODEL, KB_DIR, TOP_K
-
-_embeddings = None
-_store: Chroma | None = None
-
-
-def get_embeddings():
-    global _embeddings
-    if _embeddings is not None:
-        return _embeddings
-
-    try:
-        from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
-
-        _embeddings = FastEmbedEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-        return _embeddings
-    except Exception:
-        from langchain_community.embeddings import HuggingFaceEmbeddings
-
-        _embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
-        return _embeddings
-
-
-def _load_chunks():
-    loader = DirectoryLoader(
-        str(KB_DIR),
-        glob="**/*.md",
-        loader_cls=TextLoader,
-        loader_kwargs={"encoding": "utf-8"},
-    )
-    docs = loader.load()
+"""Small-corpus BM25 retrieval without downloads or a writable vector index."""
+import math
+import re
+import threading
+from collections import Counter
+from src.config import KB_DIR, TOP_K
+STOP = set('a an the is are i my me it to for of and or on in with how do does can please help not cannot have has this that what'.split())
+ALIASES = {'connect': 'connection', 'connecting': 'connection', 'wireless': 'wifi', 'outlook': 'email', 'teams': 'meeting', 'locked': 'lockout', 'slow': 'performance', 'slowly': 'performance', 'laptop': 'device', 'resetting': 'reset'}
+_lock = threading.RLock()
+_signature = None
+_documents = []
+def tokens(text):
+    text = text.lower().replace('wi-fi', 'wifi')
+    return [ALIASES.get(t, t) for t in re.findall(r'[a-z0-9]+', text) if t not in STOP and len(t) > 1]
+def build_or_load_store(force_rebuild=False):
+    global _signature, _documents
+    with _lock:
+        paths = sorted(KB_DIR.glob('*.md'))
+        signature = tuple((p.name, p.stat().st_mtime_ns, p.stat().st_size) for p in paths)
+        if signature != _signature or force_rebuild:
+            documents = []
+            for p in paths:
+                content = p.read_text(encoding='utf-8')
+                title = content.splitlines()[0].lstrip('# ')
+                category = next((s.split(':', 1)[1].strip() for s in content.splitlines() if s.startswith('Category:')), 'General')
+                documents.append({'id': p.stem, 'title': title, 'source': p.name, 'category': category,
+                                  'content': content, '_terms': Counter(tokens(title + ' ' + title + ' ' + content))})
+            _documents, _signature = documents, signature
+        return list(_documents)
+def list_articles():
+    return [{k: v for k, v in d.items() if k != '_terms'} for d in build_or_load_store()]
+def search_knowledge_base(query, k=TOP_K):
+    docs = build_or_load_store()
+    terms = set(tokens(query))
+    if not terms or not docs:
+        return []
+    average = sum(sum(d['_terms'].values()) for d in docs) / len(docs)
+    ranked = []
     for d in docs:
-        d.metadata["source"] = Path(d.metadata.get("source", "")).name
-
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=700,
-        chunk_overlap=120,
-        separators=["\n## ", "\n### ", "\n\n", "\n", " "],
-    )
-    return splitter.split_documents(docs)
-
-
-def build_or_load_store(force_rebuild: bool = False) -> Chroma:
-    """Build or load a local ChromaDB index (for localhost demos)."""
-    global _store
-    if _store is not None and not force_rebuild:
-        return _store
-
-    CHROMA_DIR.mkdir(parents=True, exist_ok=True)
-    embeddings = get_embeddings()
-
-    if CHROMA_DIR.exists() and any(CHROMA_DIR.iterdir()) and not force_rebuild:
-        try:
-            _store = Chroma(
-                persist_directory=str(CHROMA_DIR),
-                embedding_function=embeddings,
-                collection_name="it_helpdesk",
-            )
-            if _store._collection.count() > 0:
-                return _store
-        except Exception:
-            pass
-
-    chunks = _load_chunks()
-    _store = Chroma.from_documents(
-        documents=chunks,
-        embedding=embeddings,
-        persist_directory=str(CHROMA_DIR),
-        collection_name="it_helpdesk",
-    )
-    return _store
-
-
-def search_knowledge_base(query: str, k: int = TOP_K) -> list[dict[str, Any]]:
-    store = build_or_load_store()
-    results = store.similarity_search_with_score(query, k=k)
-    out: list[dict[str, Any]] = []
-    for doc, score in results:
-        out.append(
-            {
-                "content": doc.page_content,
-                "source": doc.metadata.get("source", "unknown"),
-                "score": float(score),
-            }
-        )
-    return out
-
-
-def format_citations(hits: list[dict[str, Any]]) -> str:
-    if not hits:
-        return "No relevant documents found in the knowledge base."
-    parts = []
-    for i, h in enumerate(hits, 1):
-        parts.append(f"[{i}] ({h['source']})\n{h['content']}")
-    return "\n\n---\n\n".join(parts)
+        score = 0.0
+        matched = terms.intersection(d['_terms'])
+        for term in matched:
+            df = sum(term in x['_terms'] for x in docs)
+            idf = math.log(1 + (len(docs) - df + .5) / (df + .5))
+            frequency = d['_terms'][term]
+            score += idf * frequency * 2.2 / (frequency + 1.2 * (.25 + .75 * sum(d['_terms'].values()) / average))
+            if term in tokens(d['title']):
+                score += 2 * idf
+        if score >= 1.2 and len(matched) / len(terms) >= .25:
+            ranked.append({**{k: v for k, v in d.items() if k != '_terms'}, 'score': round(score, 3)})
+    # Employee guide and matching desk runbook describe the same topic.
+    # Avoid spending the context window on both copies of one procedure.
+    unique, seen = [], set()
+    for hit in sorted(ranked, key=lambda d: d['score'], reverse=True):
+        topic = hit['id'].rsplit('-', 1)[0] if hit['id'].startswith('ns-') else hit['id']
+        if topic not in seen:
+            unique.append(hit)
+            seen.add(topic)
+        if len(unique) >= k:
+            break
+    return unique
+def format_citations(hits):
+    return '\n\n'.join(f"[{i}] ({h['source']})\n{h['content']}" for i, h in enumerate(hits, 1)) or 'No relevant documents found in the knowledge base.'

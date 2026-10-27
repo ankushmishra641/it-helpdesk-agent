@@ -1,0 +1,9 @@
+.git
+.env
+.venv
+.chroma
+.faiss_index
+.streamlit
+*.db
+__pycache__
+tests

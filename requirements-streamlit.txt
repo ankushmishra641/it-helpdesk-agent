@@ -1,0 +1,3 @@
+# Optional legacy UI; the public portal is api.py.
+-r requirements.txt
+streamlit==1.60.0
