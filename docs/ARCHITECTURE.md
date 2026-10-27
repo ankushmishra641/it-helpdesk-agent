@@ -47,4 +47,6 @@ A second LangGraph executes retrieve_procedure -> inspect_demo_resource -> plan_
 
 ## Known limits
 
+The portal calls `/api/assist` for coordinated conversation. `active_cases` preserves the selected ticket across reloads; `assistant_requests` caches successful responses by session and request UUID. Ticket creation investigates by default, while `/api/tickets/{id}/continue` resumes older cases from their stored descriptions. Missing facts are collected before planning. Explicit approval is interpreted by a narrow server-side allowlist and requires matching case context and revision. Documentation-only cases record employee-reported resolution separately from verified tool execution. The older `/api/chat` remains a read-only compatibility endpoint.
+
 No authenticated enterprise users, email notifications, live monitoring, SSO, real ITSM connector or real password reset exists. Guided cases have persistent status updates and timelines; escalation assigns only a fictional queue. Demo identity verification is not authentication. Historical sample timelines remain seeded. Chat responses are delivered as a complete response, not token streaming. Provider availability is configuration state, not a continuous health probe.

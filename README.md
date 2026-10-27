@@ -20,7 +20,7 @@ Copy `.env.example` to `.env` only when configuring overrides. Do not overwrite 
 
 ## Guided resolution
 
-Three persistent workflows investigate and resolve fictional VPN, account-access and software issues. Start one from an assistant suggestion or open an existing ticket and select **Start a guided demo workflow**. LangGraph retrieves procedures, inspects the isolated resource and asks Groq to propose an allowed next tool. A policy gate and explicit confirmation protect each mutation. Tool verification and employee confirmation are required before resolution. Failures go to a clearly labeled fictional specialist queue.
+Three persistent workflows investigate and resolve fictional VPN, account-access and software issues. Describe the issue in chat or submit a ticket: investigation starts from that description and asks only missing questions. Approve the proposed action and confirm the outcome in the same chat. Existing tickets offer **Continue in chat**. LangGraph retrieves procedures, inspects the isolated resource and asks Groq to propose an allowed next tool. A policy gate and explicit confirmation protect each mutation. Tool verification and employee confirmation are required before resolution. Failures go to a clearly labeled fictional specialist queue. See the [interview guide](docs/INTERVIEW_GUIDE.md) for demonstration prompts and architecture explanations.
 
 Without a key, on timeout or quota exhaustion, the same safe workflow uses its documented deterministic plan. The UI identifies the mode on each case. See [workflow design and demo script](docs/AGENT_WORKFLOWS.md).
 
