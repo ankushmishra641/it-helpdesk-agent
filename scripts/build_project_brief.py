@@ -18,7 +18,7 @@ styles={
 }
 c=canvas.Canvas(str(OUT),pagesize=(W,H))
 c.setTitle('Northstar IT Service Desk | Project & Engineering Brief')
-c.setAuthor('IT Helpdesk Agent project')
+c.setAuthor('Ankush Mishra')
 def para(text,x,y,width,style='body'):
  p=Paragraph(text,styles[style]);_,height=p.wrap(width,700);p.drawOn(c,x,y-height);return y-height
 def base(number,title,kicker):

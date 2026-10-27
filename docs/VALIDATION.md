@@ -1,6 +1,6 @@
 # Validation record
 
-Date: 27 October 2026. Release branch: codex/public-helpdesk-demo.
+Date: 27 October 2026. Release branch: release/public-helpdesk-demo.
 
 ## Completed
 
