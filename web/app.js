@@ -4,14 +4,14 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const main = $('#main'), modal = $('#modal'), modalBody = $('#modal-body');
 let token = sessionStorage.getItem('northstar-demo-token'), boot, page = '', routeVersion = 0;
 let conversation = [], sending = false, currentRecords = [], recordPage = 1, recordQuery = '', articles = [];
-let toastTimer, ticketKey, draftWorkflow = null;
+let toastTimer, ticketKey, draftWorkflow = null, activeCase = null, pendingMessage = null;
 const labels = {overview:'Overview',assistant:'Support assistant',tickets:'My tickets',knowledge:'Knowledge center',status:'Service status',records:'Sample service desk'};
 const scenarios = ['I cannot connect to VPN', 'I need password reset assistance', 'How do I request new software?'];
 function toast(text){ $('#toast').textContent = text; $('#toast').classList.add('visible'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>$('#toast').classList.remove('visible'),5000); }
 async function api(path, options={}){
   const headers = {...(options.body ? {'Content-Type':'application/json'} : {}), ...(token ? {'X-Demo-Token':token}:{}), ...options.headers};
   let response;
-  try { response=await fetch('/api'+path,{...options,headers,signal:AbortSignal.timeout(25000)}); }
+  try { response=await fetch('/api'+path,{...options,headers,signal:AbortSignal.timeout(45000)}); }
   catch { throw new Error('The service could not be reached. On free hosting it may be waking up; please retry shortly.'); }
   let data; try { data=await response.json(); } catch { throw new Error('The service returned an unexpected response. Please retry.'); }
   if(!response.ok){
@@ -39,7 +39,7 @@ function overview(){
     ['Services operational',operational+' <small>/ '+boot.services.length+'</small>','Simulated service health','◉'],
     ['Sample requests',boot.counts.tickets,'Explore realistic support workflows','▦']
   ].map(s=>'<div class="stat"><div class="stat-top">'+s[0]+'<span class="stat-icon">'+s[3]+'</span></div><div class="stat-value">'+s[1]+'</div><div class="stat-foot">'+s[2]+'</div></div>').join('')+'</div>'+
-  '<div class="grid-main"><div class="stack"><section class="card assistant-hero"><div class="orb" aria-hidden="true">✧</div><div class="hero-content"><div class="eyebrow">MEET YOUR SUPPORT ASSISTANT</div><h2>Less troubleshooting.<br>More getting things done.</h2><p>Find answers from our knowledge base, check service health, or prepare a support request.</p><a class="button primary" href="#assistant">Ask the assistant <span>↗</span></a><div class="hero-chips"><button data-prompt="I cannot connect to VPN">VPN not connecting</button><button data-prompt="How do I request new software?">Request software</button><button data-prompt="I need password reset assistance">Account access</button></div></div></section>'+
+  '<div class="grid-main"><div class="stack"><section class="card assistant-hero"><div class="orb" aria-hidden="true">✧</div><div class="hero-content"><div class="eyebrow">MEET YOUR SUPPORT ASSISTANT</div><h2>Less troubleshooting.<br>More getting things done.</h2><p>Describe the issue once. Get a diagnosis, approve the next action, and track resolution in one conversation.</p><a class="button primary" href="#assistant">Ask the assistant <span>↗</span></a><div class="hero-chips"><button data-prompt="I cannot connect to VPN">VPN not connecting</button><button data-prompt="How do I request new software?">Request software</button><button data-prompt="I need password reset assistance">Account access</button></div></div></section>'+
   '<section><h2 class="section-label">What can we help you with?</h2><div class="quick-grid"><button class="quick" data-new-ticket><span>＋</span><strong>Report an issue</strong><small>Let us take a look ↗</small></button><button class="quick" data-prompt="How do I request new software?"><span>▦</span><strong>Request software</strong><small>Get the tools you need ↗</small></button><a class="quick" href="#knowledge"><span>▧</span><strong>Find a guide</strong><small>A little help, on demand ↗</small></a></div></section>'+
   '<section class="card"><div class="card-head"><h2>Your recent requests</h2><a class="link" href="#tickets">View all ↗</a></div>'+(boot.tickets.length?ticketTable(boot.tickets.slice(0,4)):emptyTickets())+'</section></div>'+
   '<div class="stack"><section class="card"><div class="card-head"><h2>Service health</h2><a class="link" href="#status">View all ↗</a></div>'+
@@ -49,7 +49,7 @@ function overview(){
   '<section class="card"><div class="card-body"><div class="eyebrow">BUILT TO EXPLORE</div><h3>A complete fictional workplace</h3><p class="spaced">'+boot.counts.employees+' employees, '+boot.counts.assets+' assets and '+boot.counts.services+' services. Connected records show how an IT team works.</p><a class="link" href="#records">Explore the sample service desk ↗</a></div></section></div></div>';
 }
 function chatMessage(m){
-  return '<div class="message '+esc(m.role)+'"><span class="message-icon">'+(m.role==='user'?'D':'✧')+'</span><div class="message-content"><div class="message-label">'+(m.role==='user'?'YOU':'NORTHSTAR ASSISTANT · '+(m.mode==='groq'?'AI EXPLANATION':'KNOWLEDGE SEARCH'))+'</div><div class="message-text">'+esc(m.content)+'</div>'+
+  return '<div class="message '+esc(m.role)+'"><span class="message-icon">'+(m.role==='user'?'D':'✧')+'</span><div class="message-content"><div class="message-label">'+(m.role==='user'?'YOU':'NORTHSTAR ASSISTANT · '+(m.mode==='groq'?'AI + COMPANY KNOWLEDGE':m.mode==='pending'?'INVESTIGATION':'SUPPORT GUIDANCE'))+'</div><div class="message-text">'+esc(m.content)+'</div>'+
   (m.sources?.length?'<div class="source-chips">'+m.sources.map(s=>'<button data-article="'+esc(s.id)+'">▧ '+esc(s.title)+'</button>').join('')+'</div>':'')+
   (m.action?'<div class="spaced"><button data-workflow="'+esc(m.action.kind||'')+'" class="button" data-draft="'+esc(m.action.summary)+'" data-category="'+esc(m.action.category)+'">'+(m.action.type==='workflow'?'Start guided demo case':'Review ticket draft')+' ↗</button></div>':'')+
   (m.trace?.length?'<details class="trace"><summary>How this answer was prepared</summary><ul>'+m.trace.map(t=>'<li>'+esc(t)+'</li>').join('')+'</ul></details>':'')+'</div></div>';
@@ -57,22 +57,44 @@ function chatMessage(m){
 function renderMessages(){
   const el=$('#chat-messages'); if(!el)return;
   el.innerHTML=conversation.length?conversation.map(chatMessage).join(''):'<div class="chat-welcome"><span class="sparkle">✧</span><h2>How can I help today?</h2><p>Describe the issue. We’ll find the right next step together.</p><div class="suggestions">'+scenarios.map(p=>'<button data-prompt="'+esc(p)+'">'+esc(p)+' ↗</button>').join('')+'</div></div>';
-  if(sending)el.insertAdjacentHTML('beforeend','<div class="thinking" role="status">✧ Checking the knowledge base…</div>');
-  el.scrollTop=el.scrollHeight;
+  if(sending)el.insertAdjacentHTML('beforeend','<div class="thinking" role="status">✧ Investigating your case. Checking the documentation and current results…</div>');
+  el.scrollTop=el.scrollHeight;renderCase();
 }
 function assistant(){
   main.innerHTML=heading('SUPPORT, WITHOUT THE WAIT','Your IT copilot.','Grounded guidance. Clear sources. You stay in control.')+
-  '<div class="assistant-layout"><section class="card chat-panel"><div class="card-head"><h2>Support assistant</h2><span class="badge purple">'+(boot.ai_available?'AI + knowledge search':'Local knowledge search')+'</span></div><div id="chat-messages" class="chat-messages" aria-live="polite" aria-label="Conversation"></div><form id="chat-form" class="composer"><div class="composer-inner"><textarea id="chat-input" aria-label="Describe your IT issue" maxlength="1500" placeholder="Tell us what’s getting in your way…" rows="2" required></textarea><button class="button primary" type="submit" id="send-chat" aria-label="Send message" '+(sending?'disabled':'')+'>↑</button></div><small>Use fictional details only. '+(boot.ai_available?'Messages and retrieved guides may be sent to Groq. ':'')+'Never share passwords, MFA codes or private information.</small><p id="chat-error" class="error-text" role="alert"></p></form></section><div class="stack"><section class="card"><div class="card-head"><h2>Here to help with</h2></div><div class="helper-list"><div><strong>▧ Find a reliable answer</strong><p>Search approved fictional IT guides and inspect the sources.</p></div><div><strong>◉ Understand service issues</strong><p>Check a clearly labeled snapshot of our demo services.</p></div><div><strong>▤ Prepare a support ticket</strong><p>Start a guided case, follow its diagnosis, approve a demo action and confirm resolution.</p></div><div><strong>⌘ Keep access safe</strong><p>Resolve fictional VPN, account-access and software issues through confirmed, audited demo tools. Real accounts and devices are never changed.</p></div></div></section><section class="card"><div class="card-body"><h3>Not sure where to start?</h3><p class="spaced">Include the application, what you expected, and the error you saw.</p><button class="link" data-prompt="I cannot connect to VPN">Try the VPN scenario ↗</button></div></section></div></div>';
+  '<div class="assistant-layout"><section class="card chat-panel"><div class="card-head"><h2>Support assistant</h2><span class="badge purple">'+(boot.ai_available?'AI + knowledge search':'Local knowledge search')+'</span></div><div id="chat-messages" class="chat-messages" aria-live="polite" aria-label="Conversation"></div><div id="active-case" aria-live="polite"></div><form id="chat-form" class="composer"><div class="composer-inner"><textarea id="chat-input" aria-label="Describe your IT issue" maxlength="1500" placeholder="Tell us what’s getting in your way…" rows="2" required></textarea><button class="button primary" type="submit" id="send-chat" aria-label="Send message" '+(sending?'disabled':'')+'>↑</button></div><small>Use fictional details only. '+(boot.ai_available?'Messages and retrieved guides may be sent to Groq. ':'')+'Never share passwords, MFA codes or private information.</small><p id="chat-error" class="error-text" role="alert"></p></form></section><div class="stack"><section class="card"><div class="card-head"><h2>Here to help with</h2></div><div class="helper-list"><div><strong>▧ Find a reliable answer</strong><p>Search approved fictional IT guides and inspect the sources.</p></div><div><strong>◉ Understand service issues</strong><p>Check a clearly labeled snapshot of our demo services.</p></div><div><strong>▤ Prepare a support ticket</strong><p>Your issue opens a linked ticket automatically. Investigation, approvals and resolution stay in this chat.</p></div><div><strong>⌘ Keep access safe</strong><p>Resolve fictional VPN, account-access and software issues through confirmed, audited demo tools. Real accounts and devices are never changed.</p></div></div></section><section class="card"><div class="card-body"><h3>Not sure where to start?</h3><p class="spaced">Include the application, what you expected, and the error you saw.</p><button class="link" data-prompt="I cannot connect to VPN">Try the VPN scenario ↗</button></div></section></div></div>';
   renderMessages();
 }
-async function sendMessage(text){
+function renderCase(){
+  const el=$('#active-case');if(!el)return;
+  if(!activeCase){el.innerHTML='';return;}
+  const c=activeCase;
+  const stage={intake:'One detail needed',proposed:'Approval needed',awaiting_confirmation:'Please confirm the result',resolved:'Resolved',escalated:'Escalated',guidance:'Try the suggested steps',needs_detail:'More detail needed'}[c.stage]||c.stage;
+  el.innerHTML='<div class="case-strip"><div><strong>'+esc(c.ticket_id)+'</strong> '+badge(stage)+' <button class="link" data-ticket="'+esc(c.ticket_id)+'">View ticket & history ↗</button></div><p>'+esc(c.explanation)+'</p><div class="workflow-actions">'+c.actions.map(a=>'<button class="button '+(['approve','resolved','helped'].includes(a.id)?'primary':'')+'" data-chat-action="'+esc(a.id)+'" '+(sending?'disabled':'')+'>'+esc(a.label)+'</button>').join('')+'</div><small>Actions affect demo resources only. You can reply naturally here; approvals apply only to this case and its current step.</small></div>';
+}
+async function acceptResult(data){
+  activeCase=data.case||null;
+  conversation.push({role:'assistant',content:data.answer,sources:data.sources,trace:data.tool_trace,mode:data.mode});
+  if(data.ticket){const i=boot.tickets.findIndex(t=>t.id===data.ticket.id);if(i<0)boot.tickets.unshift(data.ticket);else boot.tickets[i]=data.ticket;updateCount();}
+  renderMessages();
+}
+async function sendMessage(text,action=null){
   if(sending||text.trim().length<2)return;
   if(page!=='assistant'){location.hash='assistant';await route();}
+  const payload={message:text,request_key:crypto.randomUUID(),case_id:activeCase?.ticket_id||null,revision:activeCase?.revision??null,action};
+  if(pendingMessage&&pendingMessage.message===text&&pendingMessage.action===action)Object.assign(payload,pendingMessage);
+  pendingMessage=payload;
   sending=true;conversation.push({role:'user',content:text});renderMessages();
   $('#chat-input').value='';$('#send-chat').disabled=true;$('#chat-error').textContent='';
-  try{const data=await api('/chat',{method:'POST',body:JSON.stringify({message:text})});conversation.push({role:'assistant',content:data.answer,sources:data.sources,trace:data.tool_trace,action:data.action,mode:data.mode});}
-  catch(e){if($('#chat-error')){$('#chat-error').textContent=e.message;$('#chat-input').value=text;}else toast(e.message);conversation.push({role:'assistant',content:'This message could not be processed. Please retry after the service is available.'});}
+  try{const data=await api('/assist',{method:'POST',body:JSON.stringify(payload)});pendingMessage=null;await acceptResult(data);}
+  catch(e){if($('#chat-error')){$('#chat-error').textContent=e.message;$('#chat-input').value=text;}else toast(e.message);
+    try{const fresh=await api('/bootstrap');activeCase=fresh.active_case;boot.tickets=fresh.tickets;updateCount();}catch{}
+  }
   finally{sending=false;renderMessages();if($('#send-chat'))$('#send-chat').disabled=false;}
+}
+async function continueChat(id){
+  const data=await api('/tickets/'+encodeURIComponent(id)+'/continue',{method:'POST'});
+  closeModal();location.hash='assistant';await route();await acceptResult(data);
 }
 async function ticketsPage(version){
   const data=await api('/tickets');if(version!==routeVersion)return;boot.tickets=data.tickets;updateCount();
@@ -83,12 +105,15 @@ async function ticketsPage(version){
 function newTicket(summary='',category='General',kind=null){
   draftWorkflow=kind;
   ticketKey=crypto.randomUUID();
-  openModal('<div class="eyebrow">NEW SUPPORT REQUEST</div><h2 id="modal-title">Let’s get this sorted.</h2><p>Review your request before creating a demo ticket.</p>'+(kind?'<div class="form-note">This starts the '+esc(kind)+' agent workflow on fictional resources. The agent will ask for confirmation before changes. When AI is enabled, case details and retrieved guides are sent to Groq.</div>':'')+'<form id="ticket-form"><label class="form-field">Summary<input name="summary" minlength="5" maxlength="160" required value="'+esc(summary)+'" placeholder="A short description of the issue"></label><label class="form-field">What happened?<textarea name="description" minlength="10" maxlength="3000" required placeholder="What were you trying to do? Include the error and steps already tried. Use fictional details only.">'+(kind?esc('Demo scenario: '+summary+'. Please investigate using the documented procedure.'):'')+'</textarea></label><div class="form-row"><label class="form-field">Category<select name="category">'+['General','Network','Identity','Software','Hardware'].map(x=>'<option '+(x===category?'selected':'')+'>'+x+'</option>').join('')+'</select></label><label class="form-field">Impact<select name="priority"><option value="Low">Low · workaround available</option><option value="Medium" selected>Medium · one person blocked</option><option value="High">High · multiple people affected</option></select></label></div><div class="form-note">This creates a simulated request in your session. No real IT team is notified. Do not include credentials or personal information.</div><p class="error-text" id="ticket-error" role="alert"></p><div class="form-actions"><button type="button" class="button" data-close>Cancel</button><button type="submit" class="button primary" id="confirm-ticket">Confirm & create ticket ↗</button></div></form>');
+  openModal('<div class="eyebrow">NEW SUPPORT REQUEST</div><h2 id="modal-title">Let’s get this sorted.</h2><p>Submit once. The agent will investigate your description and continue with you in chat.</p>'+(kind?'<div class="form-note">This starts the '+esc(kind)+' agent workflow on fictional resources. The agent will ask for confirmation before changes. When AI is enabled, case details and retrieved guides are sent to Groq.</div>':'')+'<form id="ticket-form"><label class="form-field">Summary<input name="summary" minlength="5" maxlength="160" required value="'+esc(summary)+'" placeholder="A short description of the issue"></label><label class="form-field">What happened?<textarea name="description" minlength="10" maxlength="3000" required placeholder="What were you trying to do? Include the error and steps already tried. Use fictional details only.">'+(kind?esc('Demo scenario: '+summary+'. Please investigate using the documented procedure.'):'')+'</textarea></label><div class="form-row"><label class="form-field">Category<select name="category">'+['General','Network','Identity','Software','Hardware'].map(x=>'<option '+(x===category?'selected':'')+'>'+x+'</option>').join('')+'</select></label><label class="form-field">Impact<select name="priority"><option value="Low">Low · workaround available</option><option value="Medium" selected>Medium · one person blocked</option><option value="High">High · multiple people affected</option></select></label></div><div class="form-note">This creates a demo ticket and starts investigation. When AI is enabled, the description and company guides are sent to Groq. No real accounts or devices are changed. Do not include secrets or personal information.</div><p class="error-text" id="ticket-error" role="alert"></p><div class="form-actions"><button type="button" class="button" data-close>Cancel</button><button type="submit" class="button primary" id="confirm-ticket">Create ticket & investigate ↗</button></div></form>');
 }
 async function submitTicket(form){
-  const data=Object.fromEntries(new FormData(form));data.request_key=ticketKey;$('#confirm-ticket').disabled=true;
-  try{const t=await api('/tickets',{method:'POST',body:JSON.stringify(data)});if(!boot.tickets.some(x=>x.id===t.id))boot.tickets.unshift(t);updateCount();closeModal();toast('Ticket created: '+t.id);location.hash='tickets';await route();if(draftWorkflow)await api('/tickets/'+encodeURIComponent(t.id)+'/workflow',{method:'POST',body:JSON.stringify({kind:draftWorkflow})});draftWorkflow=null;await viewTicket(t.id);}
-  catch(e){if($('#ticket-error')){$('#ticket-error').textContent=e.message;$('#confirm-ticket').disabled=false;}else toast('Ticket saved; reopen it to continue. '+e.message);}
+  const data=Object.fromEntries(new FormData(form));data.request_key=ticketKey;data.investigate=true;
+  $('#confirm-ticket').disabled=true;$('#confirm-ticket').textContent='Creating ticket & investigating…';
+  try{const t=await api('/tickets',{method:'POST',body:JSON.stringify(data)});if(!boot.tickets.some(x=>x.id===t.id))boot.tickets.unshift(t);updateCount();closeModal();location.hash='assistant';await route();
+    if(t.assistant)await acceptResult(t.assistant);else await continueChat(t.id);
+    toast('Ticket '+t.id+' is linked to this conversation.');
+  }catch(e){if($('#ticket-error')){$('#ticket-error').textContent=e.message;$('#confirm-ticket').disabled=false;$('#confirm-ticket').textContent='Retry investigation';}else toast(e.message);}
 }
 async function viewTicket(id,sample=false){
   const t=sample?currentRecords.find(t=>t.id===id):await api('/tickets/'+encodeURIComponent(id));
@@ -98,14 +123,11 @@ async function viewTicket(id,sample=false){
 }
 function workflowPanel(t){
   const w=t.workflow;
-  if(!w)return '<section class="workflow-panel"><div class="eyebrow">RESOLVE WITH THE AGENT</div><h3>Start a guided demo workflow</h3><p>Choose the issue to investigate. This creates a fictional resource for this ticket; it does not connect to a real account or device. When AI is enabled, case details and retrieved guides are sent to Groq.</p><div class="workflow-actions">'+Object.entries({vpn:'VPN connection',account:'Account / password recovery',software:'Software request'}).map(([kind,label])=>'<button class="button '+(kind===t.suggested_workflow?'primary':'')+'" data-flow-start="'+kind+'" data-case="'+esc(t.id)+'">'+label+'</button>').join('')+'</div></section>';
-  return '<section class="workflow-panel"><div class="eyebrow">GUIDED RESOLUTION · SIMULATED RESOURCES</div><h3>'+esc({vpn:'VPN repair',account:'Account recovery',software:'Software fulfillment'}[w.kind])+'</h3><div class="spaced">'+badge(w.stage.replaceAll('_',' '))+' '+badge(w.mode==='groq'?'LLM + RAG plan':'Documented workflow fallback')+'</div><p class="article-text">'+esc(w.explanation)+'</p>'+(w.mode==='groq'?'<small>AI proposal; only the tool results below establish what happened.</small>':'')+
-  (w.sources.length?'<div class="source-chips">'+w.sources.map(a=>'<button data-article="'+esc(a.id)+'">▧ '+esc(a.title)+'</button>').join('')+'</div>':'')+
-  (w.verification?'<p class="form-note">'+(w.verification.passed?'✓':'!')+' '+esc(w.verification.check)+' · '+(w.verification.passed?'PASS':'FAIL')+'</p>':'')+
-  '<div class="workflow-actions">'+w.actions.map(a=>'<button class="button '+(['approve','resolved','diagnose'].includes(a.id)?'primary':'')+'" data-flow-action="'+esc(a.id)+'" data-case="'+esc(t.id)+'" data-revision="'+w.revision+'">'+esc(a.label)+'</button>').join('')+'</div><details class="trace"><summary>Fictional resource state</summary><pre class="resource-state">'+esc(JSON.stringify(w.resource,null,2))+'</pre></details><div class="timeline">'+w.events.map(e=>'<div><small>'+esc(new Date(e.at).toLocaleString())+'</small><h3>'+esc(e.event)+'</h3><p>'+esc(e.note)+'</p></div>').join('')+'</div></section>';
-}
-async function refreshCase(id){
-  boot.tickets=(await api('/tickets')).tickets;updateCount();await route();await viewTicket(id);
+  return '<section class="workflow-panel"><div class="eyebrow">AGENT INVESTIGATION</div><h3>'+(w?'Your case progress':'Investigate this request')+'</h3><p>'+esc(w?w.explanation:'The agent will read this ticket description. You will not need to enter it again.')+'</p>'+
+  (w?'<div class="spaced">'+badge(w.stage.replaceAll('_',' '))+' '+badge(w.mode==='groq'?'LLM + company knowledge':w.mode==='pending'?'Awaiting information':'Documented guidance')+'</div>':'')+
+  '<button class="button primary" data-continue-case="'+esc(t.id)+'">'+(w?'Continue in chat':'Investigate from this description')+' ↗</button>'+
+  (w?.verification?'<p class="form-note">✓ '+esc(w.verification.check)+'</p>':'')+
+  (w?'<details class="trace"><summary>Investigation & action history</summary><div class="timeline">'+w.events.map(e=>'<div><small>'+esc(new Date(e.at).toLocaleString())+'</small><h3>'+esc(e.event)+'</h3><p>'+esc(e.note)+'</p></div>').join('')+'</div></details>':'')+'</section>';
 }
 async function knowledgePage(version){
   const data=await api('/knowledge');if(version!==routeVersion)return;articles=data.articles;
@@ -165,7 +187,7 @@ function privacy(){
 async function start(){
   try{
     if(!token){const s=await api('/session',{method:'POST'});token=s.token;sessionStorage.setItem('northstar-demo-token',token);}
-    boot=await api('/bootstrap');$('#ai-mode').textContent=boot.ai_available?'AI':'KB';const h=await api('/history');conversation=h.messages;updateCount();await route();
+    boot=await api('/bootstrap');activeCase=boot.active_case;$('#ai-mode').textContent=boot.ai_available?'AI':'KB';const h=await api('/history');conversation=h.messages;updateCount();await route();
   }catch(e){errorScreen(e);}
 }
 document.addEventListener('click',async e=>{
@@ -174,8 +196,8 @@ document.addEventListener('click',async e=>{
     if(target.matches('[data-new-ticket]')||target.id==='header-ticket'){if(boot)newTicket();}
     else if(target.dataset.prompt){const text=target.dataset.prompt;location.hash='assistant';await route();await sendMessage(text);}
     else if(target.dataset.draft)newTicket(target.dataset.draft,target.dataset.category,target.dataset.workflow||null);
-    else if(target.dataset.flowStart){target.disabled=true;try{await api('/tickets/'+encodeURIComponent(target.dataset.case)+'/workflow',{method:'POST',body:JSON.stringify({kind:target.dataset.flowStart})});await refreshCase(target.dataset.case);}catch(err){target.disabled=false;throw err;}}
-    else if(target.dataset.flowAction){target.disabled=true;try{await api('/tickets/'+encodeURIComponent(target.dataset.case)+'/workflow/action',{method:'POST',body:JSON.stringify({revision:Number(target.dataset.revision),action:target.dataset.flowAction})});await refreshCase(target.dataset.case);}catch(err){target.disabled=false;await viewTicket(target.dataset.case);throw err;}}
+    else if(target.dataset.continueCase){target.disabled=true;target.textContent='Reading your case…';try{await continueChat(target.dataset.continueCase);}catch(err){target.disabled=false;target.textContent='Retry investigation';throw err;}}
+    else if(target.dataset.chatAction)await sendMessage(target.textContent.trim(),target.dataset.chatAction);
     else if(target.dataset.article)await viewArticle(target.dataset.article);
     else if(target.dataset.ticket)await viewTicket(target.dataset.ticket);
     else if(target.dataset.record)await viewTicket(target.dataset.record,true);
@@ -185,7 +207,7 @@ document.addEventListener('click',async e=>{
     else if(target.id==='records-next'){recordPage++;await loadRecords();}
     else if(target.id==='records-prev'){recordPage--;await loadRecords();}
     else if(target.id==='delete-session'){
-      target.disabled=true;await api('/session',{method:'DELETE'});token=null;sessionStorage.removeItem('northstar-demo-token');boot=null;conversation=[];closeModal();
+      target.disabled=true;await api('/session',{method:'DELETE'});token=null;sessionStorage.removeItem('northstar-demo-token');boot=null;conversation=[];activeCase=null;pendingMessage=null;closeModal();
       main.innerHTML='<div class="loading-page"><h1>Your session has been deleted.</h1><p>Your demo tickets and messages have been removed.</p><button class="button primary" id="retry-app">Start a new session</button></div>';
     }
   }catch(error){toast(error.message);}

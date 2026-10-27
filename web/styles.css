@@ -11,3 +11,8 @@
 .workflow-actions .button{white-space:normal;text-align:left}
 .resource-state{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;padding:14px;background:#f6f5fb;border-radius:10px}
 .workflow-panel .timeline p{overflow-wrap:anywhere}
+.case-strip{padding:18px 22px;border-top:1px solid #e5e7eb;background:#faf9ff;max-height:340px;overflow:auto}
+.case-strip p{white-space:pre-line;margin:12px 0;color:#33384d;font-size:14px}
+.case-strip small{color:#657084;font-size:12px}
+.case-strip .workflow-actions{margin:12px 0}
+.case-strip strong{font-size:12px;color:#6554c0;margin-right:10px}

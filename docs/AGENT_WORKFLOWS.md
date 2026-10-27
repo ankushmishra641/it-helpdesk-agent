@@ -8,11 +8,11 @@ Each case owns a fictional resource independent of other tickets and sessions. T
 
 ## Demonstrate all three cases
 
-1. Ask the assistant about VPN, password recovery or software. Select **Start guided demo case**, review the form and create it. Existing tickets also have workflow buttons in their details.
-2. Answer the scenario question. The graph retrieves policy, inspects the resource and proposes the next tool. Sources, mode and diagnostics are visible.
+1. Describe the issue in chat, including anything already tried. The assistant creates a linked ticket and investigates immediately. Submitting a ticket form also investigates its description and continues in chat. Existing tickets have **Continue in chat**.
+2. Answer only missing questions (for example, whether internet works, or which software is needed). The graph retrieves policy, inspects the resource and proposes the next tool. Sources, mode and diagnostics are visible.
 3. Approve the proposed action. Account recovery requires a separate simulated identity-verification step before recovery can be approved.
 4. The tool updates the fictional resource and checks the result. The ticket becomes **Waiting**, not Resolved.
-5. Select **It works — resolve this ticket** to close it, or **Still not working — escalate** to retain the investigation in a specialist queue.
+5. Say **it works now** or use the confirmation button to close the same ticket. Say **still not working** to retain the investigation in a specialist queue. The selected case survives a page refresh; message retries use idempotency keys and approvals require the current case revision.
 
 VPN repair requires working internet and an operational VPN service. Internet failure or a simulated outage routes to review. Software fulfillment permits approved VS Code only; an unapproved application routes to Software Asset Management. Unsupported issues can still use ordinary knowledge search and tickets.
 

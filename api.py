@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, ConfigDict, field_validator
 from sqlalchemy import select
 from src import database as db
 from src import workflows
+from src import conversation as support
 from src.agent import run_agent
 from src.catalog import catalog
 from src.config import ROOT_DIR, has_llm
@@ -47,12 +48,18 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
 class ChatRequest(StrictModel):
     message: str = Field(min_length=2, max_length=1500)
+class AssistantRequest(ChatRequest):
+    request_key: UUID
+    case_id: str | None = Field(default=None, max_length=40)
+    revision: int | None = Field(default=None, ge=0, le=100)
+    action: Literal['internet_yes', 'internet_no', 'approve', 'escalate', 'resolved', 'still_failing', 'helped', 'not_helped'] | None = None
 class TicketRequest(StrictModel):
     summary: str = Field(min_length=5, max_length=160)
     description: str = Field(min_length=10, max_length=3000)
     category: Literal['Network', 'Identity', 'Software', 'Hardware', 'General'] = 'General'
     priority: Literal['Low', 'Medium', 'High'] = 'Medium'
     request_key: UUID
+    investigate: bool = True
 class WorkflowStart(StrictModel):
     kind: Literal['vpn', 'account', 'software']
 class WorkflowAction(StrictModel):
@@ -119,7 +126,8 @@ def bootstrap(sid=Depends(session)):
     data = catalog()
     return {'company': data['company'], 'services': data['services'], 'incidents': data['incidents'],
             'counts': {key: len(data[key]) for key in ['employees', 'assets', 'tickets', 'services']},
-            'articles': len(list_articles()), 'ai_available': has_llm(), 'tickets': db.list_tickets(sid)}
+            'articles': len(list_articles()), 'ai_available': has_llm(), 'tickets': db.list_tickets(sid),
+            'active_case': support.public(support.active(sid))}
 @app.get('/api/history')
 def chat_history(sid=Depends(session)):
     return {'messages': db.history(sid)}
@@ -131,6 +139,27 @@ def chat(req: ChatRequest, sid=Depends(session)):
     result = run_agent(req.message, db.history(sid), session_id=sid)
     db.save_turn(sid, req.message, result['answer'])
     return result
+@app.post('/api/assist')
+def assist(req: AssistantRequest, sid=Depends(session)):
+    throttle('assist:' + sid, 20)
+    if not db.consume_chat(sid):
+        raise HTTPException(429, 'Your demo session has reached its 80-message allowance.')
+    try:
+        return support.handle(sid, req.message, str(req.request_key), req.case_id, req.revision, req.action)
+    except LookupError as error:
+        raise HTTPException(404, str(error))
+    except ValueError as error:
+        raise HTTPException(409, str(error))
+@app.post('/api/tickets/{ticket_id}/continue')
+def continue_case(ticket_id: str, sid=Depends(session)):
+    throttle('workflow:' + sid, 20)
+    try:
+        with support.lock(sid):
+            return support.response(sid, support.investigate_ticket(sid, ticket_id))
+    except LookupError as error:
+        raise HTTPException(404, str(error))
+    except ValueError as error:
+        raise HTTPException(409, str(error))
 @app.get('/api/tickets')
 def ticket_list(sid=Depends(session)):
     return {'tickets': db.list_tickets(sid)}
@@ -139,7 +168,7 @@ def ticket_detail(ticket_id: str, sid=Depends(session)):
     ticket = db.get_ticket(sid, ticket_id)
     if not ticket:
         raise HTTPException(404, 'Ticket not found.')
-    return {**ticket, 'workflow': workflows.public(w) if (w := workflows.get(sid, ticket_id)) else None,
+    return {**ticket, 'workflow': support.public(w) if (w := workflows.get(sid, ticket_id)) else None,
             'suggested_workflow': workflows.suggest(ticket['summary'] + ' ' + ticket['description'])}
 @app.post('/api/tickets/{ticket_id}/workflow')
 def start_workflow(ticket_id: str, req: WorkflowStart, sid=Depends(session)):
@@ -163,7 +192,12 @@ def workflow_action(ticket_id: str, req: WorkflowAction, sid=Depends(session)):
 def new_ticket(req: TicketRequest, sid=Depends(session)):
     throttle('ticket:' + sid, 10)
     try:
-        return db.create_ticket(sid, req.model_dump(exclude={'request_key'}), str(req.request_key))
+        with support.lock(sid):
+            ticket = db.create_ticket(sid, req.model_dump(exclude={'request_key', 'investigate'}), str(req.request_key))
+            if req.investigate:
+                state = support.investigate_ticket(sid, ticket['id'])
+                return {**db.get_ticket(sid, ticket['id']), 'assistant': support.response(sid, state)}
+            return ticket
     except ValueError as error:
         raise HTTPException(409, str(error))
 @app.get('/api/knowledge')

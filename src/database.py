@@ -43,6 +43,13 @@ workflows = Table('case_workflows', metadata,
     Column('ticket_id', String(40), ForeignKey('tickets.id', ondelete='CASCADE'), primary_key=True),
     Column('session_id', String(64), ForeignKey('demo_sessions.id', ondelete='CASCADE'), nullable=False),
     Column('revision', Integer, nullable=False), Column('state', Text, nullable=False))
+active_cases = Table('active_cases', metadata,
+    Column('session_id', String(64), ForeignKey('demo_sessions.id', ondelete='CASCADE'), primary_key=True),
+    Column('ticket_id', String(40), ForeignKey('tickets.id', ondelete='CASCADE'), nullable=False))
+assistant_requests = Table('assistant_requests', metadata,
+    Column('session_id', String(64), ForeignKey('demo_sessions.id', ondelete='CASCADE'), primary_key=True),
+    Column('request_key', String(36), primary_key=True), Column('fingerprint', String(64), nullable=False),
+    Column('response', Text, nullable=False))
 def now():
     return datetime.now(timezone.utc).isoformat()
 def init_db():

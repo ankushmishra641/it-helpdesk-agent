@@ -10,6 +10,7 @@ TEMP = tempfile.TemporaryDirectory()
 os.environ['DATABASE_URL'] = os.environ.get('TEST_DATABASE_URL', 'sqlite:///' + str(Path(TEMP.name) / 'test.db'))
 os.environ['LLM_PROVIDER'] = 'none'
 os.environ['DAILY_LLM_LIMIT'] = '3'
+os.environ['MAX_DAILY_SESSIONS'] = '1000'
 from fastapi.testclient import TestClient
 from api import app, _rates
 from src import database as db
@@ -35,7 +36,7 @@ class ApplicationTests(unittest.TestCase):
         self.assertEqual(result.status_code, 200)
         return {'X-Demo-Token': result.json()['token']}
     def ticket(self, headers=None, key=None, summary='Laptop display not detected'):
-        data = dict(summary=summary, description='The approved dock does not detect the monitor.', category='Hardware', priority='Medium', request_key=key or str(uuid.uuid4()))
+        data = dict(summary=summary, description='The approved dock does not detect the monitor.', category='Hardware', priority='Medium', request_key=key or str(uuid.uuid4()), investigate=False)
         return self.client.post('/api/tickets', json=data, headers=headers or self.headers)
     def test_home_and_health(self):
         result = self.client.get('/')
@@ -276,5 +277,98 @@ class ApplicationTests(unittest.TestCase):
             response.json.return_value={'choices':[{'message':{'content':'{"tool":"escalate","explanation":"Review needed"}'}}]}
             result,reason=plan('Return JSON',{})
             self.assertEqual(result['tool'],'escalate')
+    def assist(self,message,case=None,action=None,key=None,headers=None):
+        return self.client.post('/api/assist',headers=headers or self.headers,json={
+            'message':message,'request_key':key or str(uuid.uuid4()),'case_id':case['ticket_id'] if case else None,
+            'revision':case['revision'] if case else None,'action':action})
+    def test_chat_reuses_vpn_facts_and_resolves_in_place(self):
+        result=self.assist('My internet works, but the VPN keeps timing out. Please help me reconnect.').json()
+        case=result['case']
+        self.assertEqual(case['stage'],'proposed')
+        self.assertEqual(case['proposal'],'repair_vpn')
+        self.assertNotIn('Does your internet work',result['answer'])
+        first_id=case['ticket_id']
+        result=self.assist('yes please',case).json()
+        self.assertEqual(result['case']['stage'],'awaiting_confirmation')
+        self.assertTrue(result['case']['verification']['passed'])
+        result=self.assist('it works now',result['case']).json()
+        self.assertEqual(result['ticket']['status'],'Resolved')
+        self.assertEqual(result['ticket']['id'],first_id)
+        self.assertEqual(len(db.list_tickets(db.identify(self.headers['X-Demo-Token']))),1)
+    def test_chat_asks_only_missing_internet_fact(self):
+        case=self.assist('VPN connection timeout').json()['case']
+        self.assertEqual(case['missing'],'internet')
+        self.assertEqual(case['mode'],'pending')
+        case=self.assist('Yes, internet works',case).json()['case']
+        self.assertEqual(case['proposal'],'repair_vpn')
+    def test_ticket_description_starts_account_investigation(self):
+        result=self.client.post('/api/tickets',headers=self.headers,json=dict(summary='Reset my password',description='I forgot my password and cannot sign in.',category='Identity',priority='Medium',request_key=str(uuid.uuid4())))
+        self.assertEqual(result.status_code,201,result.text)
+        case=result.json()['assistant']['case']
+        self.assertEqual(case['proposal'],'verify_identity')
+        self.assertEqual(case['stage'],'proposed')
+        case=self.assist('yes please',case).json()['case']
+        self.assertEqual(case['proposal'],'recover_account')
+        case=self.assist('I approve',case).json()['case']
+        self.assertEqual(case['stage'],'awaiting_confirmation')
+        result=self.assist('it works now',case).json()
+        self.assertEqual(result['ticket']['status'],'Resolved')
+    def test_software_named_in_chat_needs_no_repeat(self):
+        case=self.assist('I need VS Code installed on my managed laptop. Please help.').json()['case']
+        self.assertEqual(case['proposal'],'install_software')
+        case=self.assist('yes install it',case).json()['case']
+        result=self.assist('it works',case).json()
+        self.assertEqual(result['ticket']['status'],'Resolved')
+    def test_software_missing_name_and_unapproved_path(self):
+        case=self.assist('Please install software on my laptop').json()['case']
+        self.assertEqual(case['missing'],'software')
+        case=self.assist('Photoshop',case).json()['case']
+        self.assertEqual(case['proposal'],'escalate')
+        result=self.assist('please escalate',case).json()
+        self.assertEqual(result['ticket']['status'],'Escalated')
+    def test_explicit_outage_does_not_propose_repair(self):
+        case=self.assist('My internet works but there is a VPN outage').json()['case']
+        self.assertEqual(case['proposal'],'escalate')
+    def test_decline_and_qualified_yes_never_execute(self):
+        case=self.assist('My internet works but VPN times out').json()['case']
+        for message in ['yes but do not repair it','Can you explain before I approve?','no']:
+            result=self.assist(message,case).json()
+            self.assertEqual(result['case']['resource']['vpn_profile'],'stale')
+            self.assertEqual(result['case']['revision'],case['revision'])
+    def test_chat_retry_and_stale_approval(self):
+        key=str(uuid.uuid4())
+        message='My internet works but VPN times out'
+        first=self.assist(message,key=key).json()
+        self.assertEqual(self.assist(message,key=key).json(),first)
+        case=first['case'];key=str(uuid.uuid4())
+        approved=self.assist('yes',case,key=key).json()
+        self.assertEqual(self.assist('yes',case,key=key).json(),approved)
+        self.assertEqual(self.assist('yes',case).status_code,409)
+    def test_chat_case_ownership(self):
+        case=self.assist('My internet works but VPN times out').json()['case']
+        other=self.new_session()
+        self.assertEqual(self.assist('yes',case,headers=other).status_code,404)
+        self.assertEqual(self.client.post('/api/tickets/'+case['ticket_id']+'/continue',headers=other).status_code,404)
+    def test_reload_keeps_case_and_new_topic_switches(self):
+        case=self.assist('My internet works but VPN times out').json()['case']
+        self.assertEqual(self.client.get('/api/bootstrap',headers=self.headers).json()['active_case']['ticket_id'],case['ticket_id'])
+        other=self.assist('I need VS Code installed',case).json()['case']
+        self.assertNotEqual(other['ticket_id'],case['ticket_id'])
+        self.assertEqual(other['kind'],'software')
+    def test_general_it_guidance_has_resolution_and_escalation(self):
+        result=self.assist('My laptop is running slowly').json()
+        self.assertEqual(result['case']['kind'],'guidance')
+        self.assertTrue(result['sources'])
+        result=self.assist('still not working',result['case']).json()
+        self.assertEqual(result['ticket']['status'],'Escalated')
+    def test_unknown_topic_does_not_invent_solution(self):
+        result=self.assist('quantum nebulae asteroids').json()
+        self.assertIsNone(result['case'])
+        self.assertIn('do not have an approved procedure',result['answer'])
+    def test_old_intake_case_resumes_without_repeating_description(self):
+        ticket=self.client.post('/api/tickets',headers=self.headers,json=dict(summary='VPN connection timeout',description='My internet works but VPN times out.',category='Network',priority='Medium',request_key=str(uuid.uuid4()),investigate=False)).json()
+        self.client.post('/api/tickets/'+ticket['id']+'/workflow',headers=self.headers,json={'kind':'vpn'})
+        result=self.client.post('/api/tickets/'+ticket['id']+'/continue',headers=self.headers).json()
+        self.assertEqual(result['case']['proposal'],'repair_vpn')
 if __name__=='__main__':
     unittest.main()
